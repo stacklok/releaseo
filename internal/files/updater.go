@@ -20,8 +20,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 )
 
 // ReadVersion reads the version from a VERSION file.
@@ -55,35 +53,14 @@ func WriteVersion(path, version string) error {
 func UpdateChartYAML(chartPath, version string) error {
 	chartFile := filepath.Join(chartPath, "Chart.yaml")
 
-	// Read existing file
-	data, err := os.ReadFile(chartFile)
-	if err != nil {
-		return fmt.Errorf("reading Chart.yaml: %w", err)
-	}
-
-	// Parse YAML while preserving structure
-	var node yaml.Node
-	if err := yaml.Unmarshal(data, &node); err != nil {
-		return fmt.Errorf("parsing Chart.yaml: %w", err)
-	}
-
-	// Update version and appVersion fields
-	if err := updateYAMLField(&node, "version", version); err != nil {
+	// Update version field using surgical replacement
+	if err := UpdateYAMLFile(VersionFileConfig{File: chartFile, Path: "version"}, version); err != nil {
 		return fmt.Errorf("updating version field: %w", err)
 	}
 
-	if err := updateYAMLField(&node, "appVersion", version); err != nil {
+	// Update appVersion field using surgical replacement
+	if err := UpdateYAMLFile(VersionFileConfig{File: chartFile, Path: "appVersion"}, version); err != nil {
 		return fmt.Errorf("updating appVersion field: %w", err)
-	}
-
-	// Write back
-	out, err := yaml.Marshal(&node)
-	if err != nil {
-		return fmt.Errorf("marshaling Chart.yaml: %w", err)
-	}
-
-	if err := os.WriteFile(chartFile, out, 0644); err != nil {
-		return fmt.Errorf("writing Chart.yaml: %w", err)
 	}
 
 	return nil
@@ -93,82 +70,10 @@ func UpdateChartYAML(chartPath, version string) error {
 func UpdateValuesYAML(chartPath, version string) error {
 	valuesFile := filepath.Join(chartPath, "values.yaml")
 
-	// Read existing file
-	data, err := os.ReadFile(valuesFile)
-	if err != nil {
-		return fmt.Errorf("reading values.yaml: %w", err)
-	}
-
-	// Parse YAML while preserving structure
-	var node yaml.Node
-	if err := yaml.Unmarshal(data, &node); err != nil {
-		return fmt.Errorf("parsing values.yaml: %w", err)
-	}
-
-	// Update image.tag field (with 'v' prefix for container images)
-	tagValue := "v" + version
-	if err := updateNestedYAMLField(&node, []string{"image", "tag"}, tagValue); err != nil {
+	// Update image.tag field with 'v' prefix for container images
+	if err := UpdateYAMLFile(VersionFileConfig{File: valuesFile, Path: "image.tag", Prefix: "v"}, version); err != nil {
 		return fmt.Errorf("updating image.tag field: %w", err)
 	}
 
-	// Write back
-	out, err := yaml.Marshal(&node)
-	if err != nil {
-		return fmt.Errorf("marshaling values.yaml: %w", err)
-	}
-
-	if err := os.WriteFile(valuesFile, out, 0644); err != nil {
-		return fmt.Errorf("writing values.yaml: %w", err)
-	}
-
 	return nil
-}
-
-// updateYAMLField updates a top-level field in a YAML node.
-func updateYAMLField(node *yaml.Node, key, value string) error {
-	if node.Kind == yaml.DocumentNode && len(node.Content) > 0 {
-		return updateYAMLField(node.Content[0], key, value)
-	}
-
-	if node.Kind != yaml.MappingNode {
-		return fmt.Errorf("expected mapping node")
-	}
-
-	for i := 0; i < len(node.Content); i += 2 {
-		if node.Content[i].Value == key {
-			node.Content[i+1].Value = value
-			return nil
-		}
-	}
-
-	return fmt.Errorf("field %s not found", key)
-}
-
-// updateNestedYAMLField updates a nested field in a YAML node.
-func updateNestedYAMLField(node *yaml.Node, path []string, value string) error {
-	if len(path) == 0 {
-		return fmt.Errorf("empty path")
-	}
-
-	if node.Kind == yaml.DocumentNode && len(node.Content) > 0 {
-		return updateNestedYAMLField(node.Content[0], path, value)
-	}
-
-	if node.Kind != yaml.MappingNode {
-		return fmt.Errorf("expected mapping node")
-	}
-
-	for i := 0; i < len(node.Content); i += 2 {
-		if node.Content[i].Value == path[0] {
-			if len(path) == 1 {
-				// Found the target field
-				node.Content[i+1].Value = value
-				return nil
-			}
-			// Recurse into nested structure
-			return updateNestedYAMLField(node.Content[i+1], path[1:], value)
-		}
-	}
-
-	return fmt.Errorf("field %s not found", path[0])
 }
