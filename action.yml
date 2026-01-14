@@ -1,0 +1,83 @@
+name: 'Releaseo'
+description: 'Creates release PRs with version bumps for VERSION file and Helm charts'
+author: 'Stacklok'
+
+branding:
+  icon: 'tag'
+  color: 'blue'
+
+inputs:
+  bump_type:
+    description: 'Version bump type (major, minor, patch)'
+    required: true
+  version_file:
+    description: 'Path to VERSION file'
+    required: false
+    default: 'VERSION'
+  chart_path:
+    description: 'Path to Helm chart directory (optional)'
+    required: false
+    default: ''
+  helm_docs:
+    description: 'Run helm-docs to update chart README (requires chart_path)'
+    required: false
+    default: 'false'
+  version_files:
+    description: |
+      YAML list of files with custom version paths to update.
+      Each entry should have: file (path), path (YAML node path), and optionally prefix.
+      Example:
+        - file: deploy/app.yaml
+          path: spec.image.tag
+          prefix: "v"
+    required: false
+    default: ''
+  token:
+    description: 'GitHub token for creating PR'
+    required: true
+  base_branch:
+    description: 'Base branch for the PR'
+    required: false
+    default: 'main'
+
+outputs:
+  version:
+    description: 'The new version number'
+    value: ${{ steps.releaseo.outputs.version }}
+  pr_number:
+    description: 'The created PR number'
+    value: ${{ steps.releaseo.outputs.pr_number }}
+  pr_url:
+    description: 'The created PR URL'
+    value: ${{ steps.releaseo.outputs.pr_url }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Run releaseo
+      id: releaseo
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.token }}
+        VERSION_FILES_YAML: ${{ inputs.version_files }}
+      run: |
+        ARGS=(
+          --bump-type="${{ inputs.bump_type }}"
+          --version-file="${{ inputs.version_file }}"
+          --base-branch="${{ inputs.base_branch }}"
+        )
+
+        if [ -n "${{ inputs.chart_path }}" ]; then
+          ARGS+=(--chart-path="${{ inputs.chart_path }}")
+        fi
+
+        if [ "${{ inputs.helm_docs }}" = "true" ]; then
+          ARGS+=(--helm-docs)
+        fi
+
+        if [ -n "$VERSION_FILES_YAML" ]; then
+          VERSION_FILES_JSON=$(echo "$VERSION_FILES_YAML" | yq -o=json -I=0 '.')
+          ARGS+=(--version-files="$VERSION_FILES_JSON")
+        fi
+
+        go run github.com/stacklok/releaseo@latest "${ARGS[@]}"
