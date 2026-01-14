@@ -46,11 +46,8 @@ func UpdateYAMLFile(cfg VersionFileConfig, version string) error {
 		return fmt.Errorf("parsing file %s: %w", cfg.File, err)
 	}
 
-	// Apply prefix if specified
-	newValue := version
-	if cfg.Prefix != "" {
-		newValue = cfg.Prefix + version
-	}
+	// Apply prefix (empty prefix just results in version)
+	newValue := cfg.Prefix + version
 
 	// Convert dot notation path to YAML path format
 	yamlPath, err := convertToYAMLPath(cfg.Path)

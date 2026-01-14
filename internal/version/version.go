@@ -99,27 +99,23 @@ func (v *Version) Bump(bumpType string) (*Version, error) {
 // Compare compares two versions.
 // Returns -1 if v < other, 0 if v == other, 1 if v > other.
 func (v *Version) Compare(other *Version) int {
-	if v.Major != other.Major {
-		if v.Major < other.Major {
-			return -1
-		}
+	if c := cmpInt(v.Major, other.Major); c != 0 {
+		return c
+	}
+	if c := cmpInt(v.Minor, other.Minor); c != 0 {
+		return c
+	}
+	return cmpInt(v.Patch, other.Patch)
+}
+
+// cmpInt compares two integers and returns -1, 0, or 1.
+func cmpInt(a, b int) int {
+	if a < b {
+		return -1
+	}
+	if a > b {
 		return 1
 	}
-
-	if v.Minor != other.Minor {
-		if v.Minor < other.Minor {
-			return -1
-		}
-		return 1
-	}
-
-	if v.Patch != other.Patch {
-		if v.Patch < other.Patch {
-			return -1
-		}
-		return 1
-	}
-
 	return 0
 }
 

@@ -25,12 +25,12 @@ import (
 func ReadVersion(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("reading file: %w", err)
+		return "", fmt.Errorf("reading file %s: %w", path, err)
 	}
 
 	version := strings.TrimSpace(string(data))
 	if version == "" {
-		return "", fmt.Errorf("VERSION file is empty")
+		return "", fmt.Errorf("VERSION file %s is empty", path)
 	}
 
 	return version, nil
@@ -38,11 +38,10 @@ func ReadVersion(path string) (string, error) {
 
 // WriteVersion writes a version to a VERSION file.
 func WriteVersion(path, version string) error {
-	// Ensure version ends with newline
 	content := strings.TrimSpace(version) + "\n"
 
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		return fmt.Errorf("writing file: %w", err)
+		return fmt.Errorf("writing file %s: %w", path, err)
 	}
 
 	return nil
