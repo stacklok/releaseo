@@ -31,14 +31,15 @@ import (
 
 // Config holds the action configuration.
 type Config struct {
-	BumpType      string
-	VersionFile   string
+	BumpType       string
+	VersionFile    string
 	HelmDocsCharts []string
-	VersionFiles  []files.VersionFileConfig
-	Token         string
-	RepoOwner     string
-	RepoName      string
-	BaseBranch    string
+	HelmDocsArgs   string
+	VersionFiles   []files.VersionFileConfig
+	Token          string
+	RepoOwner      string
+	RepoName       string
+	BaseBranch     string
 }
 
 func main() {
@@ -93,7 +94,7 @@ func run(ctx context.Context, cfg Config) error {
 
 	// Run helm-docs for specified charts
 	for _, chartPath := range cfg.HelmDocsCharts {
-		if err := runHelmDocs(chartPath); err != nil {
+		if err := runHelmDocs(chartPath, cfg.HelmDocsArgs); err != nil {
 			fmt.Printf("Warning: could not run helm-docs for %s: %v\n", chartPath, err)
 		} else {
 			fmt.Printf("Updated %s/README.md via helm-docs\n", chartPath)
@@ -142,6 +143,7 @@ func parseFlags() Config {
 	flag.StringVar(&cfg.BumpType, "bump-type", "", "Version bump type (major, minor, patch)")
 	flag.StringVar(&cfg.VersionFile, "version-file", "VERSION", "Path to VERSION file")
 	flag.StringVar(&helmDocsCharts, "helm-docs", "", "Comma-separated list of chart paths to run helm-docs on")
+	flag.StringVar(&cfg.HelmDocsArgs, "helm-docs-args", "", "Additional arguments to pass to helm-docs")
 	flag.StringVar(&versionFilesJSON, "version-files", "", "JSON array of {file, path, prefix} objects for custom version updates")
 	flag.StringVar(&cfg.Token, "token", "", "GitHub token")
 	flag.StringVar(&cfg.BaseBranch, "base-branch", "main", "Base branch for PR")
@@ -240,8 +242,17 @@ func getModifiedFiles(cfg Config) []string {
 }
 
 // runHelmDocs executes helm-docs for the specified chart directory.
-func runHelmDocs(chartPath string) error {
-	cmd := exec.Command("helm-docs", "--chart-search-root", chartPath)
+func runHelmDocs(chartPath, extraArgs string) error {
+	args := []string{"--chart-search-root", chartPath}
+
+	// Parse and append extra arguments
+	if extraArgs != "" {
+		// Split by spaces, but respect quoted strings
+		extraArgsList := strings.Fields(extraArgs)
+		args = append(args, extraArgsList...)
+	}
+
+	cmd := exec.Command("helm-docs", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
