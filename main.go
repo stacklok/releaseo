@@ -92,11 +92,17 @@ func run(ctx context.Context, cfg Config) error {
 	}
 
 	// Run helm-docs if args are provided
+	var helmDocsFiles []string
 	if cfg.HelmDocsArgs != "" {
-		if err := runHelmDocs(cfg.HelmDocsArgs); err != nil {
+		var err error
+		helmDocsFiles, err = runHelmDocs(cfg.HelmDocsArgs)
+		if err != nil {
 			fmt.Printf("Warning: could not run helm-docs: %v\n", err)
 		} else {
 			fmt.Printf("Ran helm-docs successfully\n")
+			if len(helmDocsFiles) > 0 {
+				fmt.Printf("Files modified by helm-docs: %v\n", helmDocsFiles)
+			}
 		}
 	}
 
@@ -111,6 +117,10 @@ func run(ctx context.Context, cfg Config) error {
 	prTitle := fmt.Sprintf("Release v%s", newVersion)
 	prBody := generatePRBody(newVersion.String(), cfg.BumpType, cfg.VersionFiles, cfg.HelmDocsArgs != "")
 
+	// Combine version files and helm-docs modified files
+	allFiles := getModifiedFiles(cfg)
+	allFiles = append(allFiles, helmDocsFiles...)
+
 	pr, err := gh.CreateReleasePR(ctx, github.PRRequest{
 		Owner:      cfg.RepoOwner,
 		Repo:       cfg.RepoName,
@@ -118,7 +128,7 @@ func run(ctx context.Context, cfg Config) error {
 		HeadBranch: branchName,
 		Title:      prTitle,
 		Body:       prBody,
-		Files:      getModifiedFiles(cfg),
+		Files:      allFiles,
 	})
 	if err != nil {
 		return fmt.Errorf("creating PR: %w", err)
@@ -225,13 +235,44 @@ func getModifiedFiles(cfg Config) []string {
 	return modifiedFiles
 }
 
-// runHelmDocs executes helm-docs with the provided arguments.
-func runHelmDocs(argsStr string) error {
+// runHelmDocs executes helm-docs with the provided arguments and returns the list of modified files.
+func runHelmDocs(argsStr string) ([]string, error) {
 	args := strings.Fields(argsStr)
 	cmd := exec.Command("helm-docs", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return nil, err
+	}
+
+	// Detect files modified by helm-docs using git
+	return getGitModifiedFiles()
+}
+
+// getGitModifiedFiles returns a list of files that have been modified in the working directory.
+func getGitModifiedFiles() ([]string, error) {
+	cmd := exec.Command("git", "status", "--porcelain")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("running git status: %w", err)
+	}
+
+	var files []string
+	for _, line := range strings.Split(string(output), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// git status --porcelain format: "XY filename" where XY is the status
+		// We want files that are modified (M) or added (A) in the working tree
+		if len(line) >= 3 {
+			file := strings.TrimSpace(line[2:])
+			if file != "" {
+				files = append(files, file)
+			}
+		}
+	}
+	return files, nil
 }
 
 func setOutput(name, value string) {
