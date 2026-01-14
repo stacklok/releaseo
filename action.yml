@@ -80,4 +80,4 @@ runs:
           ARGS+=(--version-files="$VERSION_FILES_JSON")
         fi
 
-        go run github.com/stacklok/releaseo@latest "${ARGS[@]}"
+        go run github.com/stacklok/releaseo@v1.0.2 "${ARGS[@]}"
