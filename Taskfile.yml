@@ -68,21 +68,11 @@ tasks:
     cmds:
       - go vet ./...
 
-  mod:tidy:
-    desc: Tidy go modules
-    cmds:
-      - go mod tidy
-
   clean:
     desc: Clean build artifacts
     cmds:
       - rm -f {{.BINARY_NAME}}
       - rm -f coverage.out coverage.html
-
-  docker:build:
-    desc: Build Docker image
-    cmds:
-      - docker build -t {{.BINARY_NAME}}:local .
 
   all:
     desc: Run fmt, vet, lint, test, and build

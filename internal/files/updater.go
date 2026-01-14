@@ -51,18 +51,6 @@ func WriteVersion(path, version string) error {
 	return nil
 }
 
-// ChartYAML represents a Helm Chart.yaml file.
-type ChartYAML struct {
-	APIVersion  string `yaml:"apiVersion"`
-	Name        string `yaml:"name"`
-	Version     string `yaml:"version"`
-	AppVersion  string `yaml:"appVersion"`
-	Description string `yaml:"description,omitempty"`
-	Type        string `yaml:"type,omitempty"`
-	// Preserve other fields
-	Other map[string]interface{} `yaml:",inline"`
-}
-
 // UpdateChartYAML updates the version and appVersion in a Chart.yaml file.
 func UpdateChartYAML(chartPath, version string) error {
 	chartFile := filepath.Join(chartPath, "Chart.yaml")
