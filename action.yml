@@ -14,12 +14,8 @@ inputs:
     description: 'Path to VERSION file'
     required: false
     default: 'VERSION'
-  helm_docs:
-    description: 'Comma-separated list of Helm chart paths to run helm-docs on'
-    required: false
-    default: ''
   helm_docs_args:
-    description: 'Additional arguments to pass to helm-docs (e.g., --template-files=README.md.gotmpl)'
+    description: 'Arguments to pass to helm-docs. If provided, helm-docs will run with these args (e.g., --chart-search-root=./charts --template-files=README.md.gotmpl)'
     required: false
     default: ''
   version_files:
@@ -71,10 +67,6 @@ runs:
           --base-branch="${{ inputs.base_branch }}"
         )
 
-        if [ -n "${{ inputs.helm_docs }}" ]; then
-          ARGS+=(--helm-docs="${{ inputs.helm_docs }}")
-        fi
-
         if [ -n "${{ inputs.helm_docs_args }}" ]; then
           ARGS+=(--helm-docs-args="${{ inputs.helm_docs_args }}")
         fi
@@ -84,4 +76,4 @@ runs:
           ARGS+=(--version-files="$VERSION_FILES_JSON")
         fi
 
-        go run github.com/stacklok/releaseo@v1.0.6 "${ARGS[@]}"
+        go run github.com/stacklok/releaseo@v1.0.7 "${ARGS[@]}"
