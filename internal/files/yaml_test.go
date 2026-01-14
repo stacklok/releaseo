@@ -170,88 +170,6 @@ func TestUpdateYAMLFile_FileNotFound(t *testing.T) {
 	}
 }
 
-func TestParsePath(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name    string
-		path    string
-		want    []pathPart
-		wantErr bool
-	}{
-		{
-			name: "simple key",
-			path: "version",
-			want: []pathPart{{Key: "version", Index: -1}},
-		},
-		{
-			name: "dotted path",
-			path: "metadata.version",
-			want: []pathPart{
-				{Key: "metadata", Index: -1},
-				{Key: "version", Index: -1},
-			},
-		},
-		{
-			name: "deep path",
-			path: "spec.template.spec.image.tag",
-			want: []pathPart{
-				{Key: "spec", Index: -1},
-				{Key: "template", Index: -1},
-				{Key: "spec", Index: -1},
-				{Key: "image", Index: -1},
-				{Key: "tag", Index: -1},
-			},
-		},
-		{
-			name: "array index",
-			path: "containers[0].image",
-			want: []pathPart{
-				{Key: "containers", Index: 0},
-				{Key: "image", Index: -1},
-			},
-		},
-		{
-			name: "multiple array indices",
-			path: "spec.containers[0].ports[1].containerPort",
-			want: []pathPart{
-				{Key: "spec", Index: -1},
-				{Key: "containers", Index: 0},
-				{Key: "ports", Index: 1},
-				{Key: "containerPort", Index: -1},
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			got, err := parsePath(tt.path)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("parsePath() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-
-			if tt.wantErr {
-				return
-			}
-
-			if len(got) != len(tt.want) {
-				t.Errorf("parsePath() got %d parts, want %d", len(got), len(tt.want))
-				return
-			}
-
-			for i, part := range got {
-				if part.Key != tt.want[i].Key || part.Index != tt.want[i].Index {
-					t.Errorf("parsePath() part[%d] = {%s, %d}, want {%s, %d}",
-						i, part.Key, part.Index, tt.want[i].Key, tt.want[i].Index)
-				}
-			}
-		})
-	}
-}
-
 func TestUpdateYAMLFile_PreservesStructure(t *testing.T) {
 	t.Parallel()
 
@@ -300,11 +218,41 @@ data:
 		t.Errorf("version not updated, got:\n%s", content)
 	}
 
+	// Check comment preserved
+	if !strings.Contains(content, "# This is a comment") {
+		t.Errorf("comment lost, got:\n%s", content)
+	}
+
 	// Check other fields preserved
 	if !strings.Contains(content, "kind: ConfigMap") {
 		t.Errorf("kind field lost, got:\n%s", content)
 	}
 	if !strings.Contains(content, "app: myapp") {
 		t.Errorf("labels lost, got:\n%s", content)
+	}
+}
+
+func TestConvertToYAMLPath(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"version", "$.version"},
+		{"metadata.version", "$.metadata.version"},
+		{"spec.template.spec.image.tag", "$.spec.template.spec.image.tag"},
+		{"containers[0].image", "$.containers[0].image"},
+		{"$.already.prefixed", "$.already.prefixed"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
+			got := convertToYAMLPath(tt.input)
+			if got != tt.want {
+				t.Errorf("convertToYAMLPath(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
 	}
 }
