@@ -53,7 +53,10 @@ func UpdateYAMLFile(cfg VersionFileConfig, version string) error {
 	}
 
 	// Convert dot notation path to YAML path format
-	yamlPath := convertToYAMLPath(cfg.Path)
+	yamlPath, err := convertToYAMLPath(cfg.Path)
+	if err != nil {
+		return fmt.Errorf("invalid path %s: %w", cfg.Path, err)
+	}
 
 	// Create the path
 	path, err := yaml.PathString(yamlPath)
@@ -92,10 +95,21 @@ func UpdateYAMLFile(cfg VersionFileConfig, version string) error {
 //	"metadata.version" -> "$.metadata.version"
 //	"containers[0].image" -> "$.containers[0].image"
 //	"spec.template.spec.image.tag" -> "$.spec.template.spec.image.tag"
-func convertToYAMLPath(path string) string {
+func convertToYAMLPath(path string) (string, error) {
+	// Validate path is not empty
+	if path == "" {
+		return "", fmt.Errorf("path cannot be empty")
+	}
+
+	// Reject paths starting with '.' as they would create recursive descent queries
+	// which can cause unexpected behavior (e.g., ".image.tag" becomes "$..image.tag")
+	if strings.HasPrefix(path, ".") {
+		return "", fmt.Errorf("path cannot start with '.' (got %q) - use %q instead", path, strings.TrimPrefix(path, "."))
+	}
+
 	// If already starts with $, return as is
 	if strings.HasPrefix(path, "$") {
-		return path
+		return path, nil
 	}
-	return "$." + path
+	return "$." + path, nil
 }

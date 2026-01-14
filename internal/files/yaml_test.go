@@ -236,23 +236,64 @@ func TestConvertToYAMLPath(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		input string
-		want  string
+		input   string
+		want    string
+		wantErr bool
 	}{
-		{"version", "$.version"},
-		{"metadata.version", "$.metadata.version"},
-		{"spec.template.spec.image.tag", "$.spec.template.spec.image.tag"},
-		{"containers[0].image", "$.containers[0].image"},
-		{"$.already.prefixed", "$.already.prefixed"},
+		{"version", "$.version", false},
+		{"metadata.version", "$.metadata.version", false},
+		{"spec.template.spec.image.tag", "$.spec.template.spec.image.tag", false},
+		{"containers[0].image", "$.containers[0].image", false},
+		{"$.already.prefixed", "$.already.prefixed", false},
+		// Error cases
+		{".image.tag", "", true},           // Leading dot
+		{".version", "", true},             // Leading dot
+		{"..recursive", "", true},          // Double dot
+		{"", "", true},                     // Empty path
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			t.Parallel()
-			got := convertToYAMLPath(tt.input)
-			if got != tt.want {
+			got, err := convertToYAMLPath(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("convertToYAMLPath(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && got != tt.want {
 				t.Errorf("convertToYAMLPath(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestUpdateYAMLFile_InvalidPath(t *testing.T) {
+	t.Parallel()
+
+	input := `image:
+  tag: v1.0.0
+`
+	tmpFile, err := os.CreateTemp("", "yaml-test-*.yaml")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if err := os.WriteFile(tmpFile.Name(), []byte(input), 0600); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
+	}
+
+	// Test path starting with dot
+	cfg := VersionFileConfig{
+		File: tmpFile.Name(),
+		Path: ".image.tag",
+	}
+
+	err = UpdateYAMLFile(cfg, "2.0.0")
+	if err == nil {
+		t.Error("UpdateYAMLFile() expected error for path starting with '.'")
+	}
+	if !strings.Contains(err.Error(), "cannot start with '.'") {
+		t.Errorf("UpdateYAMLFile() error should mention leading dot, got: %v", err)
 	}
 }
