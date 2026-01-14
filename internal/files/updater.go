@@ -18,7 +18,6 @@ package files
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -44,35 +43,6 @@ func WriteVersion(path, version string) error {
 
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		return fmt.Errorf("writing file: %w", err)
-	}
-
-	return nil
-}
-
-// UpdateChartYAML updates the version and appVersion in a Chart.yaml file.
-func UpdateChartYAML(chartPath, version string) error {
-	chartFile := filepath.Join(chartPath, "Chart.yaml")
-
-	// Update version field using surgical replacement
-	if err := UpdateYAMLFile(VersionFileConfig{File: chartFile, Path: "version"}, version); err != nil {
-		return fmt.Errorf("updating version field: %w", err)
-	}
-
-	// Update appVersion field using surgical replacement
-	if err := UpdateYAMLFile(VersionFileConfig{File: chartFile, Path: "appVersion"}, version); err != nil {
-		return fmt.Errorf("updating appVersion field: %w", err)
-	}
-
-	return nil
-}
-
-// UpdateValuesYAML updates the image.tag in a values.yaml file.
-func UpdateValuesYAML(chartPath, version string) error {
-	valuesFile := filepath.Join(chartPath, "values.yaml")
-
-	// Update image.tag field with 'v' prefix for container images
-	if err := UpdateYAMLFile(VersionFileConfig{File: valuesFile, Path: "image.tag", Prefix: "v"}, version); err != nil {
-		return fmt.Errorf("updating image.tag field: %w", err)
 	}
 
 	return nil

@@ -31,15 +31,14 @@ import (
 
 // Config holds the action configuration.
 type Config struct {
-	BumpType     string
-	VersionFile  string
-	ChartPath    string
-	HelmDocs     bool
-	VersionFiles []files.VersionFileConfig
-	Token        string
-	RepoOwner    string
-	RepoName     string
-	BaseBranch   string
+	BumpType      string
+	VersionFile   string
+	HelmDocsCharts []string
+	VersionFiles  []files.VersionFileConfig
+	Token         string
+	RepoOwner     string
+	RepoName      string
+	BaseBranch    string
 }
 
 func main() {
@@ -83,36 +82,21 @@ func run(ctx context.Context, cfg Config) error {
 	}
 	fmt.Printf("Updated %s\n", cfg.VersionFile)
 
-	// Update Helm chart files if chart path is provided
-	if cfg.ChartPath != "" {
-		if err := files.UpdateChartYAML(cfg.ChartPath, newVersion.String()); err != nil {
-			fmt.Printf("Warning: could not update Chart.yaml: %v\n", err)
-		} else {
-			fmt.Printf("Updated %s/Chart.yaml\n", cfg.ChartPath)
-		}
-
-		if err := files.UpdateValuesYAML(cfg.ChartPath, newVersion.String()); err != nil {
-			fmt.Printf("Warning: could not update values.yaml: %v\n", err)
-		} else {
-			fmt.Printf("Updated %s/values.yaml\n", cfg.ChartPath)
-		}
-
-		// Run helm-docs if enabled
-		if cfg.HelmDocs {
-			if err := runHelmDocs(cfg.ChartPath); err != nil {
-				fmt.Printf("Warning: could not run helm-docs: %v\n", err)
-			} else {
-				fmt.Printf("Updated %s/README.md via helm-docs\n", cfg.ChartPath)
-			}
-		}
-	}
-
 	// Update custom version files
 	for _, vf := range cfg.VersionFiles {
 		if err := files.UpdateYAMLFile(vf, newVersion.String()); err != nil {
 			fmt.Printf("Warning: could not update %s at %s: %v\n", vf.File, vf.Path, err)
 		} else {
 			fmt.Printf("Updated %s at path %s\n", vf.File, vf.Path)
+		}
+	}
+
+	// Run helm-docs for specified charts
+	for _, chartPath := range cfg.HelmDocsCharts {
+		if err := runHelmDocs(chartPath); err != nil {
+			fmt.Printf("Warning: could not run helm-docs for %s: %v\n", chartPath, err)
+		} else {
+			fmt.Printf("Updated %s/README.md via helm-docs\n", chartPath)
 		}
 	}
 
@@ -125,7 +109,7 @@ func run(ctx context.Context, cfg Config) error {
 	// Create branch, commit, and PR
 	branchName := fmt.Sprintf("release/v%s", newVersion)
 	prTitle := fmt.Sprintf("Release v%s", newVersion)
-	prBody := generatePRBody(newVersion.String(), cfg.BumpType, cfg.ChartPath, cfg.HelmDocs, cfg.VersionFiles)
+	prBody := generatePRBody(newVersion.String(), cfg.BumpType, cfg.VersionFiles, cfg.HelmDocsCharts)
 
 	pr, err := gh.CreateReleasePR(ctx, github.PRRequest{
 		Owner:      cfg.RepoOwner,
@@ -153,15 +137,25 @@ func run(ctx context.Context, cfg Config) error {
 func parseFlags() Config {
 	cfg := Config{}
 	var versionFilesJSON string
+	var helmDocsCharts string
 
 	flag.StringVar(&cfg.BumpType, "bump-type", "", "Version bump type (major, minor, patch)")
 	flag.StringVar(&cfg.VersionFile, "version-file", "VERSION", "Path to VERSION file")
-	flag.StringVar(&cfg.ChartPath, "chart-path", "", "Path to Helm chart directory (optional)")
-	flag.BoolVar(&cfg.HelmDocs, "helm-docs", false, "Run helm-docs to update chart README (requires chart-path)")
+	flag.StringVar(&helmDocsCharts, "helm-docs", "", "Comma-separated list of chart paths to run helm-docs on")
 	flag.StringVar(&versionFilesJSON, "version-files", "", "JSON array of {file, path, prefix} objects for custom version updates")
 	flag.StringVar(&cfg.Token, "token", "", "GitHub token")
 	flag.StringVar(&cfg.BaseBranch, "base-branch", "main", "Base branch for PR")
 	flag.Parse()
+
+	// Parse helm-docs chart paths
+	if helmDocsCharts != "" {
+		for _, chart := range strings.Split(helmDocsCharts, ",") {
+			chart = strings.TrimSpace(chart)
+			if chart != "" {
+				cfg.HelmDocsCharts = append(cfg.HelmDocsCharts, chart)
+			}
+		}
+	}
 
 	// Parse version files JSON if provided
 	if versionFilesJSON != "" {
@@ -206,7 +200,7 @@ func parseFlags() Config {
 	return cfg
 }
 
-func generatePRBody(ver, bumpType, chartPath string, helmDocs bool, versionFiles []files.VersionFileConfig) string {
+func generatePRBody(ver, bumpType string, versionFiles []files.VersionFileConfig, helmDocsCharts []string) string {
 	var sb strings.Builder
 
 	sb.WriteString(fmt.Sprintf("## Release v%s\n\n", ver))
@@ -215,16 +209,12 @@ func generatePRBody(ver, bumpType, chartPath string, helmDocs bool, versionFiles
 	sb.WriteString("### Files Updated\n\n")
 	sb.WriteString("- `VERSION`\n")
 
-	if chartPath != "" {
-		sb.WriteString(fmt.Sprintf("- `%s/Chart.yaml`\n", chartPath))
-		sb.WriteString(fmt.Sprintf("- `%s/values.yaml`\n", chartPath))
-		if helmDocs {
-			sb.WriteString(fmt.Sprintf("- `%s/README.md` (via helm-docs)\n", chartPath))
-		}
-	}
-
 	for _, vf := range versionFiles {
 		sb.WriteString(fmt.Sprintf("- `%s` (path: `%s`)\n", vf.File, vf.Path))
+	}
+
+	for _, chartPath := range helmDocsCharts {
+		sb.WriteString(fmt.Sprintf("- `%s/README.md` (via helm-docs)\n", chartPath))
 	}
 
 	sb.WriteString("\n### Next Steps\n\n")
@@ -240,15 +230,11 @@ func generatePRBody(ver, bumpType, chartPath string, helmDocs bool, versionFiles
 
 func getModifiedFiles(cfg Config) []string {
 	modifiedFiles := []string{cfg.VersionFile}
-	if cfg.ChartPath != "" {
-		modifiedFiles = append(modifiedFiles, cfg.ChartPath+"/Chart.yaml")
-		modifiedFiles = append(modifiedFiles, cfg.ChartPath+"/values.yaml")
-		if cfg.HelmDocs {
-			modifiedFiles = append(modifiedFiles, cfg.ChartPath+"/README.md")
-		}
-	}
 	for _, vf := range cfg.VersionFiles {
 		modifiedFiles = append(modifiedFiles, vf.File)
+	}
+	for _, chartPath := range cfg.HelmDocsCharts {
+		modifiedFiles = append(modifiedFiles, chartPath+"/README.md")
 	}
 	return modifiedFiles
 }

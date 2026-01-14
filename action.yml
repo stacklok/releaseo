@@ -1,5 +1,5 @@
 name: 'Releaseo'
-description: 'Creates release PRs with version bumps for VERSION file and Helm charts'
+description: 'Creates release PRs with version bumps for VERSION file and YAML files'
 author: 'Stacklok'
 
 branding:
@@ -14,21 +14,21 @@ inputs:
     description: 'Path to VERSION file'
     required: false
     default: 'VERSION'
-  chart_path:
-    description: 'Path to Helm chart directory (optional)'
+  helm_docs:
+    description: 'Comma-separated list of Helm chart paths to run helm-docs on'
     required: false
     default: ''
-  helm_docs:
-    description: 'Run helm-docs to update chart README (requires chart_path)'
-    required: false
-    default: 'false'
   version_files:
     description: |
       YAML list of files with custom version paths to update.
       Each entry should have: file (path), path (YAML node path), and optionally prefix.
       Example:
-        - file: deploy/app.yaml
-          path: spec.image.tag
+        - file: deploy/charts/myapp/Chart.yaml
+          path: version
+        - file: deploy/charts/myapp/Chart.yaml
+          path: appVersion
+        - file: deploy/charts/myapp/values.yaml
+          path: image.tag
           prefix: "v"
     required: false
     default: ''
@@ -67,12 +67,8 @@ runs:
           --base-branch="${{ inputs.base_branch }}"
         )
 
-        if [ -n "${{ inputs.chart_path }}" ]; then
-          ARGS+=(--chart-path="${{ inputs.chart_path }}")
-        fi
-
-        if [ "${{ inputs.helm_docs }}" = "true" ]; then
-          ARGS+=(--helm-docs)
+        if [ -n "${{ inputs.helm_docs }}" ]; then
+          ARGS+=(--helm-docs="${{ inputs.helm_docs }}")
         fi
 
         if [ -n "$VERSION_FILES_YAML" ]; then
@@ -80,4 +76,4 @@ runs:
           ARGS+=(--version-files="$VERSION_FILES_JSON")
         fi
 
-        go run github.com/stacklok/releaseo@v1.0.4 "${ARGS[@]}"
+        go run github.com/stacklok/releaseo@v1.0.5 "${ARGS[@]}"
