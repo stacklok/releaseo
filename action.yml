@@ -60,15 +60,25 @@ runs:
       env:
         GITHUB_TOKEN: ${{ inputs.token }}
         VERSION_FILES_YAML: ${{ inputs.version_files }}
+        INPUT_BUMP_TYPE: ${{ inputs.bump_type }}
+        INPUT_VERSION_FILE: ${{ inputs.version_file }}
+        INPUT_BASE_BRANCH: ${{ inputs.base_branch }}
+        INPUT_HELM_DOCS_ARGS: ${{ inputs.helm_docs_args }}
       run: |
+        # Validate bump_type to prevent injection
+        case "$INPUT_BUMP_TYPE" in
+          major|minor|patch) ;;
+          *) echo "Error: Invalid bump_type. Must be major, minor, or patch." >&2; exit 1 ;;
+        esac
+
         ARGS=(
-          --bump-type="${{ inputs.bump_type }}"
-          --version-file="${{ inputs.version_file }}"
-          --base-branch="${{ inputs.base_branch }}"
+          --bump-type="$INPUT_BUMP_TYPE"
+          --version-file="$INPUT_VERSION_FILE"
+          --base-branch="$INPUT_BASE_BRANCH"
         )
 
-        if [ -n "${{ inputs.helm_docs_args }}" ]; then
-          ARGS+=(--helm-docs-args="${{ inputs.helm_docs_args }}")
+        if [ -n "$INPUT_HELM_DOCS_ARGS" ]; then
+          ARGS+=(--helm-docs-args="$INPUT_HELM_DOCS_ARGS")
         fi
 
         if [ -n "$VERSION_FILES_YAML" ]; then

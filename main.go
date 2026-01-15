@@ -169,6 +169,8 @@ func createReleasePR(ctx context.Context, cfg Config, newVersion string, helmDoc
 	return pr, nil
 }
 
+// parseFlags parses command-line flags and environment variables into a Config.
+// It exits the program if required configuration is missing or invalid.
 func parseFlags() Config {
 	cfg := Config{}
 	var versionFilesJSON string
@@ -185,7 +187,11 @@ func parseFlags() Config {
 	cfg.Token = resolveToken(cfg.Token)
 	cfg.RepoOwner, cfg.RepoName = parseRepository()
 
-	validateConfig(cfg)
+	if err := validateConfig(cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		flag.Usage()
+		os.Exit(1)
+	}
 
 	return cfg
 }
@@ -227,25 +233,31 @@ func parseRepository() (owner, repo string) {
 }
 
 // validateConfig ensures all required configuration fields are set.
-func validateConfig(cfg Config) {
+// Returns an error if any required field is missing.
+func validateConfig(cfg Config) error {
 	if cfg.BumpType == "" {
-		fmt.Fprintln(os.Stderr, "Error: --bump-type is required")
-		flag.Usage()
-		os.Exit(1)
+		return fmt.Errorf("--bump-type is required")
+	}
+
+	// Validate bump type value
+	validBumpTypes := map[string]bool{"major": true, "minor": true, "patch": true}
+	if !validBumpTypes[strings.ToLower(cfg.BumpType)] {
+		return fmt.Errorf("invalid bump type %q: must be major, minor, or patch", cfg.BumpType)
 	}
 
 	if cfg.Token == "" {
-		fmt.Fprintln(os.Stderr, "Error: --token or GITHUB_TOKEN is required")
-		flag.Usage()
-		os.Exit(1)
+		return fmt.Errorf("--token or GITHUB_TOKEN is required")
 	}
 
 	if cfg.RepoOwner == "" || cfg.RepoName == "" {
-		fmt.Fprintln(os.Stderr, "Error: GITHUB_REPOSITORY environment variable is required")
-		os.Exit(1)
+		return fmt.Errorf("GITHUB_REPOSITORY environment variable is required (format: owner/repo)")
 	}
+
+	return nil
 }
 
+// generatePRBody creates a markdown-formatted pull request body describing
+// the release version, bump type, and files that were updated.
 func generatePRBody(ver, bumpType string, versionFiles []files.VersionFileConfig, ranHelmDocs bool) string {
 	var sb strings.Builder
 
@@ -274,6 +286,8 @@ func generatePRBody(ver, bumpType string, versionFiles []files.VersionFileConfig
 	return sb.String()
 }
 
+// getModifiedFiles returns a list of all files that will be modified by the release.
+// This includes the VERSION file and any custom version files specified in the config.
 func getModifiedFiles(cfg Config) []string {
 	modifiedFiles := []string{cfg.VersionFile}
 	for _, vf := range cfg.VersionFiles {
@@ -282,10 +296,62 @@ func getModifiedFiles(cfg Config) []string {
 	return modifiedFiles
 }
 
+// allowedHelmDocsFlags defines the permitted helm-docs flags for security.
+// This prevents arbitrary argument injection.
+var allowedHelmDocsFlags = map[string]bool{
+	"--chart-search-root":     true,
+	"--template-files":        true,
+	"--badge-style":           true,
+	"--document-dependency-values": true,
+	"--dry-run":               true,
+	"--ignore-file":           true,
+	"--log-level":             true,
+	"--output-file":           true,
+	"--sort-values-order":     true,
+	"--values-file":           true,
+	"-c":                      true,
+	"-d":                      true,
+	"-g":                      true,
+	"-i":                      true,
+	"-l":                      true,
+	"-o":                      true,
+	"-s":                      true,
+	"-t":                      true,
+	"-u":                      true,
+	"-f":                      true,
+}
+
+// validateHelmDocsArgs validates that all helm-docs arguments are in the allowlist.
+func validateHelmDocsArgs(argsStr string) error {
+	args := strings.Fields(argsStr)
+	for _, arg := range args {
+		// Extract flag name (handle --flag=value format)
+		flag := arg
+		if idx := strings.Index(arg, "="); idx > 0 {
+			flag = arg[:idx]
+		}
+
+		// Skip non-flag arguments (values for previous flags)
+		if !strings.HasPrefix(flag, "-") {
+			continue
+		}
+
+		if !allowedHelmDocsFlags[flag] {
+			return fmt.Errorf("helm-docs flag %q is not allowed", flag)
+		}
+	}
+	return nil
+}
+
 // runHelmDocs executes helm-docs with the provided arguments and returns the list of modified files.
 func runHelmDocs(argsStr string) ([]string, error) {
+	// Validate arguments against allowlist
+	if err := validateHelmDocsArgs(argsStr); err != nil {
+		return nil, fmt.Errorf("invalid helm-docs arguments: %w", err)
+	}
+
 	args := strings.Fields(argsStr)
-	cmd := exec.Command("helm-docs", args...)
+	cmd := exec.Command("helm-docs", args...) //nolint:gosec // args validated against allowlist
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -322,6 +388,8 @@ func getGitModifiedFiles() ([]string, error) {
 	return files, nil
 }
 
+// setOutput writes a key-value pair to the GitHub Actions output file.
+// If GITHUB_OUTPUT is not set, it prints the output to stdout instead.
 func setOutput(name, value string) {
 	outputFile := os.Getenv("GITHUB_OUTPUT")
 	if outputFile == "" {
