@@ -312,3 +312,134 @@ func TestUpdateYAMLFile_PreservesQuotes(t *testing.T) {
 		})
 	}
 }
+
+func TestUpdateYAMLFile_PreservesComments(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		input        string
+		path         string
+		version      string
+		wantContains []string
+	}{
+		{
+			name: "preserves inline comment after value",
+			input: `image:
+  tag: v1.0.0 # current version
+`,
+			path:    "image.tag",
+			version: "v2.0.0",
+			wantContains: []string{
+				"tag: v2.0.0 # current version",
+			},
+		},
+		{
+			name: "preserves comment above updated field",
+			input: `image:
+  # This is the image tag
+  tag: v1.0.0
+`,
+			path:    "image.tag",
+			version: "v2.0.0",
+			wantContains: []string{
+				"# This is the image tag",
+				"tag: v2.0.0",
+			},
+		},
+		{
+			name: "preserves comments between fields",
+			input: `metadata:
+  name: myapp
+  # Version information
+  version: 1.0.0
+  # Author information
+  author: test
+`,
+			path:    "metadata.version",
+			version: "2.0.0",
+			wantContains: []string{
+				"# Version information",
+				"version: 2.0.0",
+				"# Author information",
+				"author: test",
+			},
+		},
+		{
+			name: "preserves file header comment",
+			input: `# This file is auto-generated
+# Do not edit manually
+apiVersion: v1
+metadata:
+  version: 1.0.0
+`,
+			path:    "metadata.version",
+			version: "2.0.0",
+			wantContains: []string{
+				"# This file is auto-generated",
+				"# Do not edit manually",
+				"version: 2.0.0",
+			},
+		},
+		{
+			name: "preserves multiple inline comments",
+			input: `spec:
+  replicas: 3 # number of replicas
+  image:
+    tag: v1.0.0 # image version
+    repo: myrepo # image repository
+`,
+			path:    "spec.image.tag",
+			version: "v2.0.0",
+			wantContains: []string{
+				"replicas: 3 # number of replicas",
+				"tag: v2.0.0 # image version",
+				"repo: myrepo # image repository",
+			},
+		},
+		{
+			name: "preserves block comments",
+			input: `# ============================================
+# Application Configuration
+# ============================================
+app:
+  version: 1.0.0
+  # Database settings
+  database:
+    host: localhost
+`,
+			path:    "app.version",
+			version: "2.0.0",
+			wantContains: []string{
+				"# ============================================",
+				"# Application Configuration",
+				"version: 2.0.0",
+				"# Database settings",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			tmpPath := createTempFile(t, tt.input, "yaml-test-*.yaml")
+
+			cfg := VersionFileConfig{
+				File: tmpPath,
+				Path: tt.path,
+			}
+
+			if err := UpdateYAMLFile(cfg, tt.version); err != nil {
+				t.Fatalf("UpdateYAMLFile() error = %v", err)
+			}
+
+			got := readTempFile(t, tmpPath)
+			for _, want := range tt.wantContains {
+				if !strings.Contains(got, want) {
+					t.Errorf("UpdateYAMLFile() comment not preserved, want %q in:\n%s", want, got)
+				}
+			}
+		})
+	}
+}
