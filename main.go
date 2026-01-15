@@ -53,13 +53,13 @@ func main() {
 
 func run(ctx context.Context, cfg Config) error {
 	// Bump version
-	newVersion, err := bumpVersion(cfg)
+	currentVersion, newVersion, err := bumpVersion(cfg)
 	if err != nil {
 		return err
 	}
 
 	// Update all files
-	helmDocsFiles := updateAllFiles(cfg, newVersion.String())
+	helmDocsFiles := updateAllFiles(cfg, currentVersion, newVersion.String())
 
 	// Create the release PR
 	pr, err := createReleasePR(ctx, cfg, newVersion.String(), helmDocsFiles)
@@ -76,34 +76,35 @@ func run(ctx context.Context, cfg Config) error {
 }
 
 // bumpVersion reads the current version and bumps it according to the bump type.
-func bumpVersion(cfg Config) (*version.Version, error) {
+// Returns the current version string and the new version.
+func bumpVersion(cfg Config) (string, *version.Version, error) {
 	currentVersion, err := files.ReadVersion(cfg.VersionFile)
 	if err != nil {
-		return nil, fmt.Errorf("reading version: %w", err)
+		return "", nil, fmt.Errorf("reading version: %w", err)
 	}
 	fmt.Printf("Current version: %s\n", currentVersion)
 
 	v, err := version.Parse(currentVersion)
 	if err != nil {
-		return nil, fmt.Errorf("parsing version: %w", err)
+		return "", nil, fmt.Errorf("parsing version: %w", err)
 	}
 
 	newVersion, err := v.Bump(cfg.BumpType)
 	if err != nil {
-		return nil, fmt.Errorf("bumping version: %w", err)
+		return "", nil, fmt.Errorf("bumping version: %w", err)
 	}
 	fmt.Printf("New version: %s (%s bump)\n", newVersion, cfg.BumpType)
 
 	if !version.IsGreater(newVersion.String(), currentVersion) {
-		return nil, fmt.Errorf("new version %s is not greater than current %s", newVersion, currentVersion)
+		return "", nil, fmt.Errorf("new version %s is not greater than current %s", newVersion, currentVersion)
 	}
 
-	return newVersion, nil
+	return currentVersion, newVersion, nil
 }
 
 // updateAllFiles updates the VERSION file, custom version files, and runs helm-docs.
 // Returns the list of files modified by helm-docs.
-func updateAllFiles(cfg Config, newVersion string) []string {
+func updateAllFiles(cfg Config, currentVersion, newVersion string) []string {
 	// Update VERSION file
 	if err := files.WriteVersion(cfg.VersionFile, newVersion); err != nil {
 		fmt.Printf("Warning: could not write version file: %v\n", err)
@@ -113,7 +114,7 @@ func updateAllFiles(cfg Config, newVersion string) []string {
 
 	// Update custom version files
 	for _, vf := range cfg.VersionFiles {
-		if err := files.UpdateYAMLFile(vf, newVersion); err != nil {
+		if err := files.UpdateYAMLFile(vf, currentVersion, newVersion); err != nil {
 			fmt.Printf("Warning: could not update %s at %s: %v\n", vf.File, vf.Path, err)
 		} else {
 			fmt.Printf("Updated %s at path %s\n", vf.File, vf.Path)
