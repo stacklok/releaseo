@@ -74,7 +74,7 @@ func TestPRRequest_Validate(t *testing.T) {
 	}{
 		{
 			name:    "valid request",
-			modify:  func(r *PRRequest) {},
+			modify:  func(_ *PRRequest) {},
 			wantErr: "",
 		},
 		{

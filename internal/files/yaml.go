@@ -33,7 +33,8 @@ type VersionFileConfig struct {
 
 // UpdateYAMLFile updates a specific path in a YAML file with a new version.
 // It uses surgical text replacement to preserve the original file formatting.
-func UpdateYAMLFile(cfg VersionFileConfig, version string) error {
+// The currentVersion is used to find embedded versions within larger values (e.g., image tags).
+func UpdateYAMLFile(cfg VersionFileConfig, currentVersion, newVersion string) error {
 	// Read the file content
 	data, err := os.ReadFile(cfg.File)
 	if err != nil {
@@ -52,16 +53,29 @@ func UpdateYAMLFile(cfg VersionFileConfig, version string) error {
 		return fmt.Errorf("creating path %s: %w", yamlPath, err)
 	}
 
-	var currentValue string
-	if err := path.Read(bytes.NewReader(data), &currentValue); err != nil {
+	var valueAtPath string
+	if err := path.Read(bytes.NewReader(data), &valueAtPath); err != nil {
 		return fmt.Errorf("path %s not found in %s: %w", cfg.Path, cfg.File, err)
 	}
 
-	// Apply prefix (empty prefix just results in version)
-	newValue := cfg.Prefix + version
+	// Build the old and new version strings with prefix
+	oldVersionStr := cfg.Prefix + currentVersion
+	newVersionStr := cfg.Prefix + newVersion
+
+	// Determine what to replace: either the embedded version or the entire value
+	var oldValue, newValue string
+	if strings.Contains(valueAtPath, oldVersionStr) {
+		// Embedded version found - replace just the version portion
+		oldValue = valueAtPath
+		newValue = strings.Replace(valueAtPath, oldVersionStr, newVersionStr, 1)
+	} else {
+		// No embedded version - replace the entire value (original behavior)
+		oldValue = valueAtPath
+		newValue = newVersionStr
+	}
 
 	// Perform surgical replacement - find and replace only the value
-	newData, err := surgicalReplace(data, currentValue, newValue)
+	newData, err := surgicalReplace(data, oldValue, newValue)
 	if err != nil {
 		return fmt.Errorf("replacing value at path %s: %w", cfg.Path, err)
 	}
