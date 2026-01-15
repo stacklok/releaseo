@@ -258,3 +258,57 @@ func TestUpdateYAMLFile_InvalidPath(t *testing.T) {
 		t.Errorf("UpdateYAMLFile() error should mention leading dot, got: %v", err)
 	}
 }
+
+func TestUpdateYAMLFile_PreservesQuotes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		input       string
+		wantContain string
+	}{
+		{
+			name: "preserves double quotes",
+			input: `image:
+  tag: "v1.0.0"
+`,
+			wantContain: `tag: "v2.0.0"`,
+		},
+		{
+			name: "preserves single quotes",
+			input: `image:
+  tag: 'v1.0.0'
+`,
+			wantContain: `tag: 'v2.0.0'`,
+		},
+		{
+			name: "preserves unquoted",
+			input: `image:
+  tag: v1.0.0
+`,
+			wantContain: `tag: v2.0.0`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			tmpPath := createTempFile(t, tt.input, "yaml-test-*.yaml")
+
+			cfg := VersionFileConfig{
+				File: tmpPath,
+				Path: "image.tag",
+			}
+
+			if err := UpdateYAMLFile(cfg, "v2.0.0"); err != nil {
+				t.Fatalf("UpdateYAMLFile() error = %v", err)
+			}
+
+			got := readTempFile(t, tmpPath)
+			if !strings.Contains(got, tt.wantContain) {
+				t.Errorf("UpdateYAMLFile() quote style not preserved, want %q in:\n%s", tt.wantContain, got)
+			}
+		})
+	}
+}
