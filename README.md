@@ -71,6 +71,7 @@ jobs:
       - name: Create Release PR
         uses: stacklok/releaseo@v1
         with:
+          releaseo_version: v1.0.0
           bump_type: ${{ inputs.bump_type }}
           token: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -81,6 +82,7 @@ jobs:
 - name: Create Release PR
   uses: stacklok/releaseo@v1
   with:
+    releaseo_version: v1.0.0
     bump_type: ${{ inputs.bump_type }}
     token: ${{ secrets.GITHUB_TOKEN }}
     version_files: |
@@ -107,6 +109,7 @@ jobs:
 - name: Create Release PR
   uses: stacklok/releaseo@v1
   with:
+    releaseo_version: v1.0.0
     bump_type: ${{ inputs.bump_type }}
     token: ${{ secrets.GITHUB_TOKEN }}
     version_files: |
@@ -124,6 +127,7 @@ jobs:
   id: release
   uses: stacklok/releaseo@v1
   with:
+    releaseo_version: v1.0.0
     bump_type: ${{ inputs.bump_type }}
     token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -138,6 +142,7 @@ jobs:
 
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
+| `releaseo_version` | Version of releaseo to use (e.g., `v1.0.0`) | Yes | - |
 | `bump_type` | Version bump type (`major`, `minor`, `patch`) | Yes | - |
 | `version_file` | Path to VERSION file | No | `VERSION` |
 | `version_files` | YAML list of files with paths to update (see below) | No | - |

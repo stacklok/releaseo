@@ -7,6 +7,9 @@ branding:
   color: 'blue'
 
 inputs:
+  releaseo_version:
+    description: 'Version of releaseo to use (e.g., v1.0.0). Must match a GitHub release.'
+    required: true
   bump_type:
     description: 'Version bump type (major, minor, patch)'
     required: true
@@ -54,6 +57,50 @@ outputs:
 runs:
   using: 'composite'
   steps:
+    - name: Validate version input
+      shell: bash
+      run: |
+        VERSION="${{ inputs.releaseo_version }}"
+        if [ -z "$VERSION" ]; then
+          echo "::error::The 'releaseo_version' input is required. Please specify the releaseo version (e.g., v1.0.0)"
+          exit 1
+        fi
+        if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "::error::Invalid version format '$VERSION'. Please use semantic versioning (e.g., v1.0.0)"
+          exit 1
+        fi
+
+    - name: Download releaseo binary
+      shell: bash
+      run: |
+        VERSION="${{ inputs.releaseo_version }}"
+
+        # Determine OS and architecture
+        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+        ARCH=$(uname -m)
+        case "$ARCH" in
+          x86_64) ARCH="amd64" ;;
+          aarch64|arm64) ARCH="arm64" ;;
+          *) echo "::error::Unsupported architecture: $ARCH"; exit 1 ;;
+        esac
+
+        # Download the binary
+        ASSET_NAME="releaseo_${VERSION#v}_${OS}_${ARCH}.tar.gz"
+        ASSET_URL="https://github.com/stacklok/releaseo/releases/download/${VERSION}/${ASSET_NAME}"
+
+        echo "Downloading releaseo ${VERSION} for ${OS}/${ARCH}..."
+
+        if ! curl -sSL --fail -o releaseo.tar.gz "$ASSET_URL"; then
+          echo "::error::Failed to download releaseo ${VERSION}. Ensure the release exists: https://github.com/stacklok/releaseo/releases/tag/${VERSION}"
+          exit 1
+        fi
+
+        tar xzf releaseo.tar.gz
+        chmod +x releaseo
+        rm releaseo.tar.gz
+
+        echo "Successfully downloaded releaseo ${VERSION}"
+
     - name: Run releaseo
       id: releaseo
       shell: bash
@@ -76,4 +123,4 @@ runs:
           ARGS+=(--version-files="$VERSION_FILES_JSON")
         fi
 
-        go run github.com/stacklok/releaseo@v1.0.11 "${ARGS[@]}"
+        ./releaseo "${ARGS[@]}"
