@@ -15,7 +15,6 @@
 package files
 
 import (
-	"os"
 	"strings"
 	"testing"
 )
@@ -117,23 +116,12 @@ name: myapp
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			// Create temp file
-			tmpFile, err := os.CreateTemp("", "yaml-test-*.yaml")
-			if err != nil {
-				t.Fatalf("failed to create temp file: %v", err)
-			}
-			defer os.Remove(tmpFile.Name())
+			tmpPath := createTempFile(t, tt.input, "yaml-test-*.yaml")
 
-			if err := os.WriteFile(tmpFile.Name(), []byte(tt.input), 0600); err != nil {
-				t.Fatalf("failed to write temp file: %v", err)
-			}
-
-			// Set the file path in config
 			cfg := tt.config
-			cfg.File = tmpFile.Name()
+			cfg.File = tmpPath
 
-			// Run the update
-			err = UpdateYAMLFile(cfg, tt.version)
+			err := UpdateYAMLFile(cfg, tt.version)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("UpdateYAMLFile() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -143,14 +131,9 @@ name: myapp
 				return
 			}
 
-			// Read the result
-			got, err := os.ReadFile(tmpFile.Name())
-			if err != nil {
-				t.Fatalf("failed to read temp file: %v", err)
-			}
-
-			if !strings.Contains(string(got), tt.wantContain) {
-				t.Errorf("UpdateYAMLFile() result does not contain %q, got:\n%s", tt.wantContain, string(got))
+			got := readTempFile(t, tmpPath)
+			if !strings.Contains(got, tt.wantContain) {
+				t.Errorf("UpdateYAMLFile() result does not contain %q, got:\n%s", tt.wantContain, got)
 			}
 		})
 	}
@@ -187,18 +170,10 @@ data:
     content: here
 `
 
-	tmpFile, err := os.CreateTemp("", "yaml-test-*.yaml")
-	if err != nil {
-		t.Fatalf("failed to create temp file: %v", err)
-	}
-	defer os.Remove(tmpFile.Name())
-
-	if err := os.WriteFile(tmpFile.Name(), []byte(input), 0600); err != nil {
-		t.Fatalf("failed to write temp file: %v", err)
-	}
+	tmpPath := createTempFile(t, input, "yaml-test-*.yaml")
 
 	cfg := VersionFileConfig{
-		File: tmpFile.Name(),
+		File: tmpPath,
 		Path: "data.version",
 	}
 
@@ -206,12 +181,7 @@ data:
 		t.Fatalf("UpdateYAMLFile() error = %v", err)
 	}
 
-	got, err := os.ReadFile(tmpFile.Name())
-	if err != nil {
-		t.Fatalf("failed to read temp file: %v", err)
-	}
-
-	content := string(got)
+	content := readTempFile(t, tmpPath)
 
 	// Check version was updated
 	if !strings.Contains(content, "version: 2.0.0") {
@@ -273,23 +243,14 @@ func TestUpdateYAMLFile_InvalidPath(t *testing.T) {
 	input := `image:
   tag: v1.0.0
 `
-	tmpFile, err := os.CreateTemp("", "yaml-test-*.yaml")
-	if err != nil {
-		t.Fatalf("failed to create temp file: %v", err)
-	}
-	defer os.Remove(tmpFile.Name())
+	tmpPath := createTempFile(t, input, "yaml-test-*.yaml")
 
-	if err := os.WriteFile(tmpFile.Name(), []byte(input), 0600); err != nil {
-		t.Fatalf("failed to write temp file: %v", err)
-	}
-
-	// Test path starting with dot
 	cfg := VersionFileConfig{
-		File: tmpFile.Name(),
+		File: tmpPath,
 		Path: ".image.tag",
 	}
 
-	err = UpdateYAMLFile(cfg, "2.0.0")
+	err := UpdateYAMLFile(cfg, "2.0.0")
 	if err == nil {
 		t.Error("UpdateYAMLFile() expected error for path starting with '.'")
 	}

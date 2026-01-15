@@ -16,7 +16,6 @@ package github
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,6 +25,10 @@ import (
 
 // CreateReleasePR creates a new branch with the modified files and opens a PR.
 func (c *Client) CreateReleasePR(ctx context.Context, req PRRequest) (*PRResult, error) {
+	if err := req.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid PR request: %w", err)
+	}
+
 	// Get the base branch reference
 	baseRef, _, err := c.client.Git.GetRef(ctx, req.Owner, req.Repo, "refs/heads/"+req.BaseBranch)
 	if err != nil {
@@ -112,26 +115,4 @@ func (c *Client) commitFile(ctx context.Context, owner, repo, branch, filePath s
 	}
 
 	return nil
-}
-
-// GetFileContent retrieves the content of a file from a repository.
-func (c *Client) GetFileContent(ctx context.Context, owner, repo, path, ref string) (string, error) {
-	file, _, _, err := c.client.Repositories.GetContents(
-		ctx, owner, repo, path,
-		&github.RepositoryContentGetOptions{Ref: ref},
-	)
-	if err != nil {
-		return "", fmt.Errorf("getting file: %w", err)
-	}
-
-	if file.Content == nil {
-		return "", fmt.Errorf("file content is nil")
-	}
-
-	content, err := base64.StdEncoding.DecodeString(*file.Content)
-	if err != nil {
-		return "", fmt.Errorf("decoding content: %w", err)
-	}
-
-	return string(content), nil
 }

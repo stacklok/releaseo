@@ -52,39 +52,68 @@ func main() {
 }
 
 func run(ctx context.Context, cfg Config) error {
-	// Read current version
+	// Bump version
+	newVersion, err := bumpVersion(cfg)
+	if err != nil {
+		return err
+	}
+
+	// Update all files
+	helmDocsFiles := updateAllFiles(cfg, newVersion.String())
+
+	// Create the release PR
+	pr, err := createReleasePR(ctx, cfg, newVersion.String(), helmDocsFiles)
+	if err != nil {
+		return err
+	}
+
+	// Set GitHub Actions outputs
+	setOutput("version", newVersion.String())
+	setOutput("pr_number", fmt.Sprintf("%d", pr.Number))
+	setOutput("pr_url", pr.URL)
+
+	return nil
+}
+
+// bumpVersion reads the current version and bumps it according to the bump type.
+func bumpVersion(cfg Config) (*version.Version, error) {
 	currentVersion, err := files.ReadVersion(cfg.VersionFile)
 	if err != nil {
-		return fmt.Errorf("reading version: %w", err)
+		return nil, fmt.Errorf("reading version: %w", err)
 	}
 	fmt.Printf("Current version: %s\n", currentVersion)
 
-	// Parse and bump version
 	v, err := version.Parse(currentVersion)
 	if err != nil {
-		return fmt.Errorf("parsing version: %w", err)
+		return nil, fmt.Errorf("parsing version: %w", err)
 	}
 
 	newVersion, err := v.Bump(cfg.BumpType)
 	if err != nil {
-		return fmt.Errorf("bumping version: %w", err)
+		return nil, fmt.Errorf("bumping version: %w", err)
 	}
 	fmt.Printf("New version: %s (%s bump)\n", newVersion, cfg.BumpType)
 
-	// Validate version is increasing
 	if !version.IsGreater(newVersion.String(), currentVersion) {
-		return fmt.Errorf("new version %s is not greater than current %s", newVersion, currentVersion)
+		return nil, fmt.Errorf("new version %s is not greater than current %s", newVersion, currentVersion)
 	}
 
+	return newVersion, nil
+}
+
+// updateAllFiles updates the VERSION file, custom version files, and runs helm-docs.
+// Returns the list of files modified by helm-docs.
+func updateAllFiles(cfg Config, newVersion string) []string {
 	// Update VERSION file
-	if err := files.WriteVersion(cfg.VersionFile, newVersion.String()); err != nil {
-		return fmt.Errorf("writing version: %w", err)
+	if err := files.WriteVersion(cfg.VersionFile, newVersion); err != nil {
+		fmt.Printf("Warning: could not write version file: %v\n", err)
+	} else {
+		fmt.Printf("Updated %s\n", cfg.VersionFile)
 	}
-	fmt.Printf("Updated %s\n", cfg.VersionFile)
 
 	// Update custom version files
 	for _, vf := range cfg.VersionFiles {
-		if err := files.UpdateYAMLFile(vf, newVersion.String()); err != nil {
+		if err := files.UpdateYAMLFile(vf, newVersion); err != nil {
 			fmt.Printf("Warning: could not update %s at %s: %v\n", vf.File, vf.Path, err)
 		} else {
 			fmt.Printf("Updated %s at path %s\n", vf.File, vf.Path)
@@ -106,18 +135,20 @@ func run(ctx context.Context, cfg Config) error {
 		}
 	}
 
-	// Create GitHub client
+	return helmDocsFiles
+}
+
+// createReleasePR creates the GitHub release PR with all modified files.
+func createReleasePR(ctx context.Context, cfg Config, newVersion string, helmDocsFiles []string) (*github.PRResult, error) {
 	gh, err := github.NewClient(ctx, cfg.Token)
 	if err != nil {
-		return fmt.Errorf("creating GitHub client: %w", err)
+		return nil, fmt.Errorf("creating GitHub client: %w", err)
 	}
 
-	// Create branch, commit, and PR
 	branchName := fmt.Sprintf("release/v%s", newVersion)
 	prTitle := fmt.Sprintf("Release v%s", newVersion)
-	prBody := generatePRBody(newVersion.String(), cfg.BumpType, cfg.VersionFiles, cfg.HelmDocsArgs != "")
+	prBody := generatePRBody(newVersion, cfg.BumpType, cfg.VersionFiles, cfg.HelmDocsArgs != "")
 
-	// Combine version files and helm-docs modified files
 	allFiles := getModifiedFiles(cfg)
 	allFiles = append(allFiles, helmDocsFiles...)
 
@@ -131,17 +162,11 @@ func run(ctx context.Context, cfg Config) error {
 		Files:      allFiles,
 	})
 	if err != nil {
-		return fmt.Errorf("creating PR: %w", err)
+		return nil, fmt.Errorf("creating PR: %w", err)
 	}
 
 	fmt.Printf("\nRelease PR created: %s\n", pr.URL)
-
-	// Set GitHub Actions outputs
-	setOutput("version", newVersion.String())
-	setOutput("pr_number", fmt.Sprintf("%d", pr.Number))
-	setOutput("pr_url", pr.URL)
-
-	return nil
+	return pr, nil
 }
 
 func parseFlags() Config {
@@ -156,29 +181,53 @@ func parseFlags() Config {
 	flag.StringVar(&cfg.BaseBranch, "base-branch", "main", "Base branch for PR")
 	flag.Parse()
 
-	// Parse version files JSON if provided
-	if versionFilesJSON != "" {
-		if err := json.Unmarshal([]byte(versionFilesJSON), &cfg.VersionFiles); err != nil {
-			fmt.Fprintf(os.Stderr, "Error parsing --version-files JSON: %v\n", err)
-			os.Exit(1)
-		}
+	cfg.VersionFiles = parseVersionFiles(versionFilesJSON)
+	cfg.Token = resolveToken(cfg.Token)
+	cfg.RepoOwner, cfg.RepoName = parseRepository()
+
+	validateConfig(cfg)
+
+	return cfg
+}
+
+// parseVersionFiles parses the JSON array of version file configurations.
+func parseVersionFiles(jsonStr string) []files.VersionFileConfig {
+	if jsonStr == "" {
+		return nil
 	}
 
-	// Get token from environment if not provided
-	if cfg.Token == "" {
-		cfg.Token = os.Getenv("GITHUB_TOKEN")
+	var versionFiles []files.VersionFileConfig
+	if err := json.Unmarshal([]byte(jsonStr), &versionFiles); err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing --version-files JSON: %v\n", err)
+		os.Exit(1)
+	}
+	return versionFiles
+}
+
+// resolveToken returns the token from the flag or environment variable.
+func resolveToken(flagToken string) string {
+	if flagToken != "" {
+		return flagToken
+	}
+	return os.Getenv("GITHUB_TOKEN")
+}
+
+// parseRepository extracts owner and repo from GITHUB_REPOSITORY environment variable.
+func parseRepository() (owner, repo string) {
+	repoEnv := os.Getenv("GITHUB_REPOSITORY")
+	if repoEnv == "" {
+		return "", ""
 	}
 
-	// Parse repository from GITHUB_REPOSITORY environment variable
-	if repo := os.Getenv("GITHUB_REPOSITORY"); repo != "" {
-		parts := strings.Split(repo, "/")
-		if len(parts) == 2 {
-			cfg.RepoOwner = parts[0]
-			cfg.RepoName = parts[1]
-		}
+	parts := strings.Split(repoEnv, "/")
+	if len(parts) == 2 {
+		return parts[0], parts[1]
 	}
+	return "", ""
+}
 
-	// Validate required fields
+// validateConfig ensures all required configuration fields are set.
+func validateConfig(cfg Config) {
 	if cfg.BumpType == "" {
 		fmt.Fprintln(os.Stderr, "Error: --bump-type is required")
 		flag.Usage()
@@ -195,8 +244,6 @@ func parseFlags() Config {
 		fmt.Fprintln(os.Stderr, "Error: GITHUB_REPOSITORY environment variable is required")
 		os.Exit(1)
 	}
-
-	return cfg
 }
 
 func generatePRBody(ver, bumpType string, versionFiles []files.VersionFileConfig, ranHelmDocs bool) string {

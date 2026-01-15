@@ -45,14 +45,38 @@ func NewClient(ctx context.Context, token string) (*Client, error) {
 }
 
 // PRRequest contains the parameters for creating a pull request.
+// All fields except Body are required.
 type PRRequest struct {
-	Owner      string
-	Repo       string
-	BaseBranch string
-	HeadBranch string
-	Title      string
-	Body       string
-	Files      []string
+	Owner      string   // GitHub repository owner (required)
+	Repo       string   // GitHub repository name (required)
+	BaseBranch string   // Base branch for the PR (required, e.g., "main")
+	HeadBranch string   // Feature branch to create (required)
+	Title      string   // PR title (required)
+	Body       string   // PR body/description
+	Files      []string // Files to commit (required, must not be empty)
+}
+
+// Validate checks that all required fields are set.
+func (r *PRRequest) Validate() error {
+	if r.Owner == "" {
+		return fmt.Errorf("owner is required")
+	}
+	if r.Repo == "" {
+		return fmt.Errorf("repo is required")
+	}
+	if r.BaseBranch == "" {
+		return fmt.Errorf("base branch is required")
+	}
+	if r.HeadBranch == "" {
+		return fmt.Errorf("head branch is required")
+	}
+	if r.Title == "" {
+		return fmt.Errorf("title is required")
+	}
+	if len(r.Files) == 0 {
+		return fmt.Errorf("at least one file is required")
+	}
+	return nil
 }
 
 // PRResult contains the result of creating a pull request.

@@ -15,7 +15,6 @@
 package files
 
 import (
-	"os"
 	"testing"
 )
 
@@ -62,18 +61,9 @@ func TestReadVersion(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			// Create temp file
-			tmpFile, err := os.CreateTemp("", "version-*")
-			if err != nil {
-				t.Fatalf("failed to create temp file: %v", err)
-			}
-			defer os.Remove(tmpFile.Name())
+			tmpPath := createTempFile(t, tt.content, "version-*")
 
-			if err := os.WriteFile(tmpFile.Name(), []byte(tt.content), 0600); err != nil {
-				t.Fatalf("failed to write temp file: %v", err)
-			}
-
-			got, err := ReadVersion(tmpFile.Name())
+			got, err := ReadVersion(tmpPath)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ReadVersion() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -120,25 +110,16 @@ func TestWriteVersion(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			tmpFile, err := os.CreateTemp("", "version-*")
-			if err != nil {
-				t.Fatalf("failed to create temp file: %v", err)
-			}
-			defer os.Remove(tmpFile.Name())
-			tmpFile.Close()
+			tmpPath := createTempFile(t, "", "version-*")
 
-			if err := WriteVersion(tmpFile.Name(), tt.version); err != nil {
+			if err := WriteVersion(tmpPath, tt.version); err != nil {
 				t.Errorf("WriteVersion() error = %v", err)
 				return
 			}
 
-			got, err := os.ReadFile(tmpFile.Name())
-			if err != nil {
-				t.Fatalf("failed to read temp file: %v", err)
-			}
-
-			if string(got) != tt.want {
-				t.Errorf("WriteVersion() wrote %q, want %q", string(got), tt.want)
+			got := readTempFile(t, tmpPath)
+			if got != tt.want {
+				t.Errorf("WriteVersion() wrote %q, want %q", got, tt.want)
 			}
 		})
 	}
