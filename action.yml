@@ -54,6 +54,50 @@ outputs:
 runs:
   using: 'composite'
   steps:
+    - name: Download releaseo binary
+      id: download
+      shell: bash
+      run: |
+        VERSION="${{ github.action_ref }}"
+
+        # Validate version is specified and is a tag (not a branch)
+        if [ -z "$VERSION" ]; then
+          echo "::error::No version specified. Please reference this action with a version tag (e.g., @v1.0.0)"
+          exit 1
+        fi
+
+        if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+          echo "::error::Invalid version '$VERSION'. Please use a semantic version tag (e.g., @v1.0.0). Using @main or @branch-name is not supported."
+          exit 1
+        fi
+
+        # Determine OS and architecture
+        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+        ARCH=$(uname -m)
+        case "$ARCH" in
+          x86_64) ARCH="amd64" ;;
+          aarch64|arm64) ARCH="arm64" ;;
+          *) echo "::error::Unsupported architecture: $ARCH"; exit 1 ;;
+        esac
+
+        # Download the binary
+        ASSET_NAME="releaseo_${VERSION#v}_${OS}_${ARCH}.tar.gz"
+        ASSET_URL="https://github.com/stacklok/releaseo/releases/download/${VERSION}/${ASSET_NAME}"
+
+        echo "Downloading releaseo ${VERSION} for ${OS}/${ARCH}..."
+        echo "URL: ${ASSET_URL}"
+
+        if ! curl -sSL --fail -o releaseo.tar.gz "$ASSET_URL"; then
+          echo "::error::Failed to download releaseo ${VERSION}. Make sure the release exists at: https://github.com/stacklok/releaseo/releases/tag/${VERSION}"
+          exit 1
+        fi
+
+        tar xzf releaseo.tar.gz
+        chmod +x releaseo
+        rm releaseo.tar.gz
+
+        echo "Successfully downloaded releaseo ${VERSION}"
+
     - name: Run releaseo
       id: releaseo
       shell: bash
@@ -76,4 +120,4 @@ runs:
           ARGS+=(--version-files="$VERSION_FILES_JSON")
         fi
 
-        go run github.com/stacklok/releaseo@v1.0.11 "${ARGS[@]}"
+        ./releaseo "${ARGS[@]}"
