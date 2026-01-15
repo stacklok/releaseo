@@ -23,12 +23,13 @@ func TestUpdateYAMLFile(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		input       string
-		config      VersionFileConfig
-		version     string
-		wantContain string
-		wantErr     bool
+		name           string
+		input          string
+		config         VersionFileConfig
+		currentVersion string
+		newVersion     string
+		wantContain    string
+		wantErr        bool
 	}{
 		{
 			name: "simple path",
@@ -37,9 +38,10 @@ metadata:
   name: test
   version: 1.0.0
 `,
-			config:      VersionFileConfig{Path: "metadata.version"},
-			version:     "2.0.0",
-			wantContain: "version: 2.0.0",
+			config:         VersionFileConfig{Path: "metadata.version"},
+			currentVersion: "1.0.0",
+			newVersion:     "2.0.0",
+			wantContain:    "version: 2.0.0",
 		},
 		{
 			name: "nested path",
@@ -49,66 +51,78 @@ metadata:
       image:
         tag: v1.0.0
 `,
-			config:      VersionFileConfig{Path: "spec.template.spec.image.tag"},
-			version:     "2.0.0",
-			wantContain: "tag: 2.0.0",
+			config:         VersionFileConfig{Path: "spec.template.spec.image.tag", Prefix: "v"},
+			currentVersion: "1.0.0",
+			newVersion:     "2.0.0",
+			wantContain:    "tag: v2.0.0",
 		},
 		{
 			name: "with prefix",
 			input: `image:
   tag: v1.0.0
 `,
-			config:      VersionFileConfig{Path: "image.tag", Prefix: "v"},
-			version:     "2.0.0",
-			wantContain: "tag: v2.0.0",
+			config:         VersionFileConfig{Path: "image.tag", Prefix: "v"},
+			currentVersion: "1.0.0",
+			newVersion:     "2.0.0",
+			wantContain:    "tag: v2.0.0",
 		},
 		{
 			name: "without prefix",
 			input: `image:
   tag: 1.0.0
 `,
-			config:      VersionFileConfig{Path: "image.tag"},
-			version:     "2.0.0",
-			wantContain: "tag: 2.0.0",
+			config:         VersionFileConfig{Path: "image.tag"},
+			currentVersion: "1.0.0",
+			newVersion:     "2.0.0",
+			wantContain:    "tag: 2.0.0",
 		},
 		{
-			name: "array index",
-			input: `containers:
-  - name: app
-    image: myapp:v1.0.0
-  - name: sidecar
-    image: sidecar:v1.0.0
+			name: "embedded version in image tag",
+			input: `toolhiveRunnerImage: ghcr.io/stacklok/toolhive/proxyrunner:v0.7.1
 `,
-			config:      VersionFileConfig{Path: "containers[0].image"},
-			version:     "myapp:v2.0.0",
-			wantContain: "image: myapp:v2.0.0",
+			config:         VersionFileConfig{Path: "toolhiveRunnerImage", Prefix: "v"},
+			currentVersion: "0.7.1",
+			newVersion:     "0.8.0",
+			wantContain:    "toolhiveRunnerImage: ghcr.io/stacklok/toolhive/proxyrunner:v0.8.0",
+		},
+		{
+			name: "embedded version without prefix",
+			input: `image: myregistry.io/app:1.0.0-alpine
+`,
+			config:         VersionFileConfig{Path: "image"},
+			currentVersion: "1.0.0",
+			newVersion:     "2.0.0",
+			wantContain:    "image: myregistry.io/app:2.0.0-alpine",
 		},
 		{
 			name: "top level key",
 			input: `version: 1.0.0
 name: myapp
 `,
-			config:      VersionFileConfig{Path: "version"},
-			version:     "2.0.0",
-			wantContain: "version: 2.0.0",
+			config:         VersionFileConfig{Path: "version"},
+			currentVersion: "1.0.0",
+			newVersion:     "2.0.0",
+			wantContain:    "version: 2.0.0",
 		},
 		{
 			name: "key not found",
 			input: `metadata:
   name: test
 `,
-			config:  VersionFileConfig{Path: "metadata.version"},
-			version: "2.0.0",
-			wantErr: true,
+			config:         VersionFileConfig{Path: "metadata.version"},
+			currentVersion: "1.0.0",
+			newVersion:     "2.0.0",
+			wantErr:        true,
 		},
 		{
 			name: "invalid path - missing parent",
 			input: `metadata:
   name: test
 `,
-			config:  VersionFileConfig{Path: "spec.version"},
-			version: "2.0.0",
-			wantErr: true,
+			config:         VersionFileConfig{Path: "spec.version"},
+			currentVersion: "1.0.0",
+			newVersion:     "2.0.0",
+			wantErr:        true,
 		},
 	}
 
@@ -121,7 +135,7 @@ name: myapp
 			cfg := tt.config
 			cfg.File = tmpPath
 
-			err := UpdateYAMLFile(cfg, tt.version)
+			err := UpdateYAMLFile(cfg, tt.currentVersion, tt.newVersion)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("UpdateYAMLFile() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -147,7 +161,7 @@ func TestUpdateYAMLFile_FileNotFound(t *testing.T) {
 		Path: "version",
 	}
 
-	err := UpdateYAMLFile(cfg, "1.0.0")
+	err := UpdateYAMLFile(cfg, "0.9.0", "1.0.0")
 	if err == nil {
 		t.Error("UpdateYAMLFile() expected error for nonexistent file")
 	}
@@ -177,7 +191,7 @@ data:
 		Path: "data.version",
 	}
 
-	if err := UpdateYAMLFile(cfg, "2.0.0"); err != nil {
+	if err := UpdateYAMLFile(cfg, "1.0.0", "2.0.0"); err != nil {
 		t.Fatalf("UpdateYAMLFile() error = %v", err)
 	}
 
@@ -250,7 +264,7 @@ func TestUpdateYAMLFile_InvalidPath(t *testing.T) {
 		Path: ".image.tag",
 	}
 
-	err := UpdateYAMLFile(cfg, "2.0.0")
+	err := UpdateYAMLFile(cfg, "1.0.0", "2.0.0")
 	if err == nil {
 		t.Error("UpdateYAMLFile() expected error for path starting with '.'")
 	}
@@ -297,11 +311,12 @@ func TestUpdateYAMLFile_PreservesQuotes(t *testing.T) {
 			tmpPath := createTempFile(t, tt.input, "yaml-test-*.yaml")
 
 			cfg := VersionFileConfig{
-				File: tmpPath,
-				Path: "image.tag",
+				File:   tmpPath,
+				Path:   "image.tag",
+				Prefix: "v",
 			}
 
-			if err := UpdateYAMLFile(cfg, "v2.0.0"); err != nil {
+			if err := UpdateYAMLFile(cfg, "1.0.0", "2.0.0"); err != nil {
 				t.Fatalf("UpdateYAMLFile() error = %v", err)
 			}
 
@@ -317,19 +332,23 @@ func TestUpdateYAMLFile_PreservesComments(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name         string
-		input        string
-		path         string
-		version      string
-		wantContains []string
+		name           string
+		input          string
+		path           string
+		prefix         string
+		currentVersion string
+		newVersion     string
+		wantContains   []string
 	}{
 		{
 			name: "preserves inline comment after value",
 			input: `image:
   tag: v1.0.0 # current version
 `,
-			path:    "image.tag",
-			version: "v2.0.0",
+			path:           "image.tag",
+			prefix:         "v",
+			currentVersion: "1.0.0",
+			newVersion:     "2.0.0",
 			wantContains: []string{
 				"tag: v2.0.0 # current version",
 			},
@@ -340,8 +359,10 @@ func TestUpdateYAMLFile_PreservesComments(t *testing.T) {
   # This is the image tag
   tag: v1.0.0
 `,
-			path:    "image.tag",
-			version: "v2.0.0",
+			path:           "image.tag",
+			prefix:         "v",
+			currentVersion: "1.0.0",
+			newVersion:     "2.0.0",
 			wantContains: []string{
 				"# This is the image tag",
 				"tag: v2.0.0",
@@ -356,8 +377,9 @@ func TestUpdateYAMLFile_PreservesComments(t *testing.T) {
   # Author information
   author: test
 `,
-			path:    "metadata.version",
-			version: "2.0.0",
+			path:           "metadata.version",
+			currentVersion: "1.0.0",
+			newVersion:     "2.0.0",
 			wantContains: []string{
 				"# Version information",
 				"version: 2.0.0",
@@ -373,8 +395,9 @@ apiVersion: v1
 metadata:
   version: 1.0.0
 `,
-			path:    "metadata.version",
-			version: "2.0.0",
+			path:           "metadata.version",
+			currentVersion: "1.0.0",
+			newVersion:     "2.0.0",
 			wantContains: []string{
 				"# This file is auto-generated",
 				"# Do not edit manually",
@@ -389,8 +412,10 @@ metadata:
     tag: v1.0.0 # image version
     repo: myrepo # image repository
 `,
-			path:    "spec.image.tag",
-			version: "v2.0.0",
+			path:           "spec.image.tag",
+			prefix:         "v",
+			currentVersion: "1.0.0",
+			newVersion:     "2.0.0",
 			wantContains: []string{
 				"replicas: 3 # number of replicas",
 				"tag: v2.0.0 # image version",
@@ -408,8 +433,9 @@ app:
   database:
     host: localhost
 `,
-			path:    "app.version",
-			version: "2.0.0",
+			path:           "app.version",
+			currentVersion: "1.0.0",
+			newVersion:     "2.0.0",
 			wantContains: []string{
 				"# ============================================",
 				"# Application Configuration",
@@ -426,11 +452,12 @@ app:
 			tmpPath := createTempFile(t, tt.input, "yaml-test-*.yaml")
 
 			cfg := VersionFileConfig{
-				File: tmpPath,
-				Path: tt.path,
+				File:   tmpPath,
+				Path:   tt.path,
+				Prefix: tt.prefix,
 			}
 
-			if err := UpdateYAMLFile(cfg, tt.version); err != nil {
+			if err := UpdateYAMLFile(cfg, tt.currentVersion, tt.newVersion); err != nil {
 				t.Fatalf("UpdateYAMLFile() error = %v", err)
 			}
 
