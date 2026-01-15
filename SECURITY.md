@@ -112,6 +112,8 @@ Releaseo is a composite GitHub Action that:
 | **Mitigation** | ✅ `bump_type` validated against allowlist (major\|minor\|patch) |
 | **Residual Risk** | Low |
 
+> **Practical Note**: This threat requires the attacker to control workflow inputs. If the action is only triggered by maintainers via `workflow_dispatch`, the attacker would already need maintainer access—at which point they could push malicious code directly. This control is primarily **defense-in-depth** against accidental misconfiguration or future workflow changes that might expose inputs to untrusted sources.
+
 ### T2: Command Injection via helm-docs Arguments
 | | |
 |---|---|
@@ -121,6 +123,8 @@ Releaseo is a composite GitHub Action that:
 | **Likelihood** | High (without mitigation) |
 | **Mitigation** | ✅ Strict allowlist of permitted helm-docs flags |
 | **Residual Risk** | Low |
+
+> **Practical Note**: Same as T1—requires attacker to control inputs. For maintainer-triggered releases, this is defense-in-depth.
 
 ### T3: Path Traversal via File Paths
 | | |
@@ -132,6 +136,8 @@ Releaseo is a composite GitHub Action that:
 | **Mitigation** | ✅ `ValidatePath()` function prevents traversal outside working directory |
 | **Residual Risk** | Low |
 
+> **Practical Note**: Same as T1—requires attacker to control inputs. For maintainer-triggered releases, this is defense-in-depth.
+
 ### T4: YAML Injection
 | | |
 |---|---|
@@ -141,6 +147,8 @@ Releaseo is a composite GitHub Action that:
 | **Likelihood** | Low |
 | **Mitigation** | ✅ Path is used for lookup only, value replacement is surgical |
 | **Residual Risk** | Low |
+
+> **Practical Note**: Same as T1—requires attacker to control inputs. For maintainer-triggered releases, this is defense-in-depth.
 
 ### T5: Token Exposure
 | | |
@@ -183,6 +191,49 @@ Releaseo is a composite GitHub Action that:
 | **Likelihood** | Low |
 | **Mitigation** | ⚠️ Branch names are deterministic (`release/vX.Y.Z`) |
 | **Residual Risk** | Low (branch protection rules should be used) |
+
+## Practical Risk Assessment
+
+This section provides context on realistic threats based on how the action is intended to be used.
+
+### Intended Usage Pattern
+
+Releaseo is designed to be triggered by **trusted maintainers** when preparing a release, typically via:
+- `workflow_dispatch` (manual trigger)
+- Repository dispatch events
+- Protected branch pushes
+
+### Threat Realism by Trigger Type
+
+| Trigger Type | Input-Based Threats (T1-T4) | Supply Chain (T7) | Notes |
+|--------------|----------------------------|-------------------|-------|
+| `workflow_dispatch` (maintainer) | **Low** - Attacker needs maintainer access | **Medium** | Primary realistic threat |
+| `push` to protected branch | **Low** - Requires write access | **Medium** | Branch protection helps |
+| `pull_request` (if misconfigured) | **High** - External PRs could inject inputs | **Medium** | ⚠️ Do not use this trigger |
+| `pull_request_target` | **High** - Dangerous with checkout | **Medium** | ⚠️ Avoid this pattern |
+
+### Key Insight
+
+**For maintainer-triggered releases, the most realistic threats are:**
+
+1. **Supply chain compromise (T7)** - Malicious code in dependencies or `helm-docs`
+2. **Compromised maintainer credentials** - Stolen GitHub credentials used to trigger releases
+3. **Accidental misconfiguration** - Adding `pull_request` trigger that exposes inputs to untrusted sources
+
+**Input-based threats (T1-T4) are primarily defense-in-depth** because:
+- They require the attacker to control workflow inputs
+- If the action is only triggered by maintainers, the attacker already needs write access
+- A maintainer with write access could push malicious code directly without using this action
+
+### Why We Still Implement These Controls
+
+Even though input-based threats are less realistic for maintainer-triggered workflows, the mitigations provide value:
+
+1. **Defense in depth** - Multiple layers of protection
+2. **Future-proofing** - Protects against workflow changes that might expose inputs
+3. **Security audit compliance** - Demonstrates secure coding practices
+4. **Reduced blast radius** - Limits damage if credentials are compromised
+5. **Best practices** - Sets a good example for action development
 
 ## Security Controls Summary
 
