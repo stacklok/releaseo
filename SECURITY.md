@@ -108,11 +108,10 @@ Releaseo is a composite GitHub Action that:
 | **Attack Vector** | Crafted `bump_type` or other inputs with shell metacharacters |
 | **Impact** | Arbitrary command execution on runner |
 | **Likelihood** | High (without mitigation) |
-| **Mitigation** | ✅ All inputs passed via environment variables, not shell interpolation |
-| **Mitigation** | ✅ `bump_type` validated against allowlist (major\|minor\|patch) |
-| **Residual Risk** | Low |
+| **Mitigation** | ⏸️ Not implemented - accepted risk for maintainer-triggered workflows |
+| **Residual Risk** | **Accepted** - see practical note |
 
-> **Practical Note**: This threat requires the attacker to control workflow inputs. If the action is only triggered by maintainers via `workflow_dispatch`, the attacker would already need maintainer access—at which point they could push malicious code directly. This control is primarily **defense-in-depth** against accidental misconfiguration or future workflow changes that might expose inputs to untrusted sources.
+> **Practical Note**: This threat requires the attacker to control workflow inputs. Since this action is designed to be triggered only by maintainers (via `workflow_dispatch` or similar), an attacker would already need maintainer access to exploit this—at which point they could push malicious code directly. **Risk accepted**: Implementing shell injection mitigations provides minimal security benefit for the intended use case.
 
 ### T2: Command Injection via helm-docs Arguments
 | | |
@@ -121,10 +120,10 @@ Releaseo is a composite GitHub Action that:
 | **Attack Vector** | Malicious flags in `helm_docs_args` (e.g., `--execute=malicious.sh`) |
 | **Impact** | Arbitrary command execution |
 | **Likelihood** | High (without mitigation) |
-| **Mitigation** | ✅ Strict allowlist of permitted helm-docs flags |
-| **Residual Risk** | Low |
+| **Mitigation** | ⏸️ Not implemented - accepted risk for maintainer-triggered workflows |
+| **Residual Risk** | **Accepted** - see practical note |
 
-> **Practical Note**: Same as T1—requires attacker to control inputs. For maintainer-triggered releases, this is defense-in-depth.
+> **Practical Note**: Same as T1—requires attacker to control inputs. Since maintainers configure `helm_docs_args` in the workflow file, they already have write access. **Risk accepted**.
 
 ### T3: Path Traversal via File Paths
 | | |
@@ -133,10 +132,10 @@ Releaseo is a composite GitHub Action that:
 | **Attack Vector** | `version_file` or `version_files[].file` containing `../` sequences |
 | **Impact** | Read/write files outside repository root |
 | **Likelihood** | Medium (without mitigation) |
-| **Mitigation** | ✅ `ValidatePath()` function prevents traversal outside working directory |
-| **Residual Risk** | Low |
+| **Mitigation** | ⏸️ Not implemented - accepted risk for maintainer-triggered workflows |
+| **Residual Risk** | **Accepted** - see practical note |
 
-> **Practical Note**: Same as T1—requires attacker to control inputs. For maintainer-triggered releases, this is defense-in-depth.
+> **Practical Note**: Same as T1—requires attacker to control inputs. Maintainers configure file paths in the workflow file. **Risk accepted**.
 
 ### T4: YAML Injection
 | | |
@@ -148,7 +147,7 @@ Releaseo is a composite GitHub Action that:
 | **Mitigation** | ✅ Path is used for lookup only, value replacement is surgical |
 | **Residual Risk** | Low |
 
-> **Practical Note**: Same as T1—requires attacker to control inputs. For maintainer-triggered releases, this is defense-in-depth.
+> **Practical Note**: This mitigation is inherent to the implementation design, not a separate security control. The YAML library handles path lookup safely.
 
 ### T5: Token Exposure
 | | |
@@ -225,15 +224,17 @@ Releaseo is designed to be triggered by **trusted maintainers** when preparing a
 - If the action is only triggered by maintainers, the attacker already needs write access
 - A maintainer with write access could push malicious code directly without using this action
 
-### Why We Still Implement These Controls
+### Accepted Risks
 
-Even though input-based threats are less realistic for maintainer-triggered workflows, the mitigations provide value:
+Given the maintainer-only trigger model, the following input-based threats have been **accepted** rather than mitigated:
 
-1. **Defense in depth** - Multiple layers of protection
-2. **Future-proofing** - Protects against workflow changes that might expose inputs
-3. **Security audit compliance** - Demonstrates secure coding practices
-4. **Reduced blast radius** - Limits damage if credentials are compromised
-5. **Best practices** - Sets a good example for action development
+| Threat | Reason for Acceptance |
+|--------|----------------------|
+| T1: Shell Injection | Attacker would need maintainer access, at which point they have write access anyway |
+| T2: Command Injection | Maintainers control `helm_docs_args` in the workflow file |
+| T3: Path Traversal | Maintainers control file paths in the workflow file |
+
+**Important**: If the action's usage model changes to allow untrusted inputs (e.g., `pull_request` trigger), these risks should be re-evaluated and mitigations implemented.
 
 ## Security Controls Summary
 
@@ -241,11 +242,17 @@ Even though input-based threats are less realistic for maintainer-triggered work
 
 | Control | Description | Threats Mitigated |
 |---------|-------------|-------------------|
-| Environment variable inputs | Inputs passed via env vars, not shell interpolation | T1 |
-| Input validation | `bump_type` validated against allowlist | T1 |
-| Helm-docs argument allowlist | Only permitted flags accepted | T2 |
-| Path validation | `ValidatePath()` prevents directory traversal | T3 |
 | Surgical YAML updates | Values replaced precisely, structure preserved | T4 |
+| Token via environment | Token passed as env var, not in command args | T5 |
+
+### Not Implemented (Accepted Risk) ⏸️
+
+| Control | Description | Reason |
+|---------|-------------|--------|
+| Environment variable inputs | Inputs passed via env vars, not shell interpolation | Maintainer-only access model |
+| Input validation | `bump_type` validated against allowlist | Maintainer-only access model |
+| Helm-docs argument allowlist | Only permitted flags accepted | Maintainer-only access model |
+| Path validation | `ValidatePath()` prevents directory traversal | Maintainer-only access model |
 
 ### Recommended Additional Controls ⚠️
 
