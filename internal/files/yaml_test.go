@@ -216,10 +216,10 @@ func TestConvertToYAMLPath(t *testing.T) {
 		{"containers[0].image", "$.containers[0].image", false},
 		{"$.already.prefixed", "$.already.prefixed", false},
 		// Error cases
-		{".image.tag", "", true},           // Leading dot
-		{".version", "", true},             // Leading dot
-		{"..recursive", "", true},          // Double dot
-		{"", "", true},                     // Empty path
+		{".image.tag", "", true},  // Leading dot
+		{".version", "", true},    // Leading dot
+		{"..recursive", "", true}, // Double dot
+		{"", "", true},            // Empty path
 	}
 
 	for _, tt := range tests {

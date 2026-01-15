@@ -285,7 +285,7 @@ func getModifiedFiles(cfg Config) []string {
 // runHelmDocs executes helm-docs with the provided arguments and returns the list of modified files.
 func runHelmDocs(argsStr string) ([]string, error) {
 	args := strings.Fields(argsStr)
-	cmd := exec.Command("helm-docs", args...)
+	cmd := exec.Command("helm-docs", args...) //nolint:gosec // args are from trusted input
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -304,7 +304,7 @@ func getGitModifiedFiles() ([]string, error) {
 		return nil, fmt.Errorf("running git status: %w", err)
 	}
 
-	var files []string
+	var result []string
 	for _, line := range strings.Split(string(output), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -315,11 +315,11 @@ func getGitModifiedFiles() ([]string, error) {
 		if len(line) >= 3 {
 			file := strings.TrimSpace(line[2:])
 			if file != "" {
-				files = append(files, file)
+				result = append(result, file)
 			}
 		}
 	}
-	return files, nil
+	return result, nil
 }
 
 func setOutput(name, value string) {
