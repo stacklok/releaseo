@@ -17,7 +17,6 @@ package github
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/google/go-github/v60/github"
@@ -46,8 +45,6 @@ func (c *Client) CreateReleasePR(ctx context.Context, req PRRequest) (*PRResult,
 		return nil, fmt.Errorf("creating branch: %w", err)
 	}
 
-	fmt.Printf("Created branch: %s\n", req.HeadBranch)
-
 	// Commit the files to the new branch
 	for _, filePath := range req.Files {
 		if err := c.commitFile(ctx, req.Owner, req.Repo, req.HeadBranch, filePath); err != nil {
@@ -66,12 +63,8 @@ func (c *Client) CreateReleasePR(ctx context.Context, req PRRequest) (*PRResult,
 		return nil, fmt.Errorf("creating pull request: %w", err)
 	}
 
-	// Add release label
-	_, _, err = c.client.Issues.AddLabelsToIssue(ctx, req.Owner, req.Repo, pr.GetNumber(), []string{"release"})
-	if err != nil {
-		// Non-fatal - label might not exist
-		fmt.Printf("Warning: could not add 'release' label: %v\n", err)
-	}
+	// Add release label (non-fatal if it fails, label might not exist)
+	_, _, _ = c.client.Issues.AddLabelsToIssue(ctx, req.Owner, req.Repo, pr.GetNumber(), []string{"release"})
 
 	return &PRResult{
 		Number: pr.GetNumber(),
@@ -81,8 +74,8 @@ func (c *Client) CreateReleasePR(ctx context.Context, req PRRequest) (*PRResult,
 
 // commitFile commits a single file to a branch.
 func (c *Client) commitFile(ctx context.Context, owner, repo, branch, filePath string) error {
-	// Read file content
-	content, err := os.ReadFile(filePath)
+	// Read file content using the fileReader interface
+	content, err := c.fileReader.ReadFile(filePath)
 	if err != nil {
 		return fmt.Errorf("reading file: %w", err)
 	}

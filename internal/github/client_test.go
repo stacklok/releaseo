@@ -140,3 +140,52 @@ func TestPRRequest_Validate(t *testing.T) {
 		})
 	}
 }
+
+// mockFileReader is a simple mock implementation for testing FileReader injection.
+type mockFileReader struct {
+	called bool
+}
+
+func (m *mockFileReader) ReadFile(_ string) ([]byte, error) {
+	m.called = true
+	return []byte("mock content"), nil
+}
+
+func TestWithFileReader(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		fileReader FileReader
+	}{
+		{
+			name:       "custom FileReader is injected",
+			fileReader: &mockFileReader{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			client, err := NewClient(context.Background(), "test-token", WithFileReader(tt.fileReader))
+			if err != nil {
+				t.Fatalf("NewClient() unexpected error = %v", err)
+			}
+			if client.fileReader != tt.fileReader {
+				t.Error("WithFileReader() did not inject the custom FileReader")
+			}
+		})
+	}
+}
+
+func TestClient_ImplementsPRCreator(t *testing.T) {
+	t.Parallel()
+
+	client, err := NewClient(context.Background(), "test-token")
+	if err != nil {
+		t.Fatalf("NewClient() unexpected error = %v", err)
+	}
+
+	// Runtime assertion that Client implements PRCreator interface.
+	var _ PRCreator = client
+}

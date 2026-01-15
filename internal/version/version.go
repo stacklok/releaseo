@@ -119,17 +119,34 @@ func cmpInt(a, b int) int {
 	return 0
 }
 
-// IsGreater returns true if version a is greater than version b.
-func IsGreater(a, b string) bool {
+// CompareVersions compares two version strings and returns their relative ordering.
+// It returns -1 if a < b, 0 if a == b, and 1 if a > b.
+// If either version string cannot be parsed, an error is returned with context
+// indicating which version failed to parse.
+func CompareVersions(a, b string) (int, error) {
 	va, err := Parse(a)
 	if err != nil {
-		return false
+		return 0, fmt.Errorf("parsing version a %q: %w", a, err)
 	}
 
 	vb, err := Parse(b)
 	if err != nil {
-		return false
+		return 0, fmt.Errorf("parsing version b %q: %w", b, err)
 	}
 
-	return va.Compare(vb) > 0
+	return va.Compare(vb), nil
+}
+
+// IsGreaterE returns true if version a is greater than version b, along with
+// any error that occurred during parsing. This is the preferred function for
+// new code as it allows callers to distinguish between "version A is not greater"
+// and "invalid version string".
+//
+// If an error is returned, the boolean result should be ignored.
+func IsGreaterE(a, b string) (bool, error) {
+	cmp, err := CompareVersions(a, b)
+	if err != nil {
+		return false, err
+	}
+	return cmp > 0, nil
 }

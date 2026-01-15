@@ -15,6 +15,7 @@
 package version
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -247,13 +248,121 @@ func TestVersion_Compare(t *testing.T) {
 	}
 }
 
-func TestIsGreater(t *testing.T) {
+func TestCompareVersions(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name string
-		a    string
-		b    string
-		want bool
+		name    string
+		a       string
+		b       string
+		want    int
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "a greater than b - major",
+			a:    "2.0.0",
+			b:    "1.0.0",
+			want: 1,
+		},
+		{
+			name: "a less than b - major",
+			a:    "1.0.0",
+			b:    "2.0.0",
+			want: -1,
+		},
+		{
+			name: "equal versions",
+			a:    "1.0.0",
+			b:    "1.0.0",
+			want: 0,
+		},
+		{
+			name: "a greater than b - minor",
+			a:    "1.2.0",
+			b:    "1.1.0",
+			want: 1,
+		},
+		{
+			name: "a greater than b - patch",
+			a:    "1.0.2",
+			b:    "1.0.1",
+			want: 1,
+		},
+		{
+			name: "with v prefix",
+			a:    "v2.0.0",
+			b:    "v1.0.0",
+			want: 1,
+		},
+		{
+			name:    "invalid version a",
+			a:       "invalid",
+			b:       "1.0.0",
+			wantErr: true,
+			errMsg:  "parsing version a",
+		},
+		{
+			name:    "invalid version b",
+			a:       "1.0.0",
+			b:       "invalid",
+			wantErr: true,
+			errMsg:  "parsing version b",
+		},
+		{
+			name:    "both versions invalid",
+			a:       "bad",
+			b:       "invalid",
+			wantErr: true,
+			errMsg:  "parsing version a",
+		},
+		{
+			name:    "empty version a",
+			a:       "",
+			b:       "1.0.0",
+			wantErr: true,
+			errMsg:  "parsing version a",
+		},
+		{
+			name:    "empty version b",
+			a:       "1.0.0",
+			b:       "",
+			wantErr: true,
+			errMsg:  "parsing version b",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := CompareVersions(tt.a, tt.b)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("CompareVersions() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if tt.wantErr {
+				if tt.errMsg != "" && err != nil {
+					if !strings.Contains(err.Error(), tt.errMsg) {
+						t.Errorf("CompareVersions() error = %v, should contain %q", err, tt.errMsg)
+					}
+				}
+				return
+			}
+			if got != tt.want {
+				t.Errorf("CompareVersions() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsGreaterE(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		a       string
+		b       string
+		want    bool
+		wantErr bool
+		errMsg  string
 	}{
 		{
 			name: "greater",
@@ -280,24 +389,53 @@ func TestIsGreater(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "invalid a",
-			a:    "invalid",
-			b:    "1.0.0",
-			want: false,
+			name:    "invalid a returns error",
+			a:       "invalid",
+			b:       "1.0.0",
+			wantErr: true,
+			errMsg:  "parsing version a",
 		},
 		{
-			name: "invalid b",
-			a:    "1.0.0",
-			b:    "invalid",
-			want: false,
+			name:    "invalid b returns error",
+			a:       "1.0.0",
+			b:       "invalid",
+			wantErr: true,
+			errMsg:  "parsing version b",
+		},
+		{
+			name:    "empty a returns error",
+			a:       "",
+			b:       "1.0.0",
+			wantErr: true,
+			errMsg:  "parsing version a",
+		},
+		{
+			name:    "malformed version returns error",
+			a:       "1.2",
+			b:       "1.0.0",
+			wantErr: true,
+			errMsg:  "parsing version a",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := IsGreater(tt.a, tt.b); got != tt.want {
-				t.Errorf("IsGreater() = %v, want %v", got, tt.want)
+			got, err := IsGreaterE(tt.a, tt.b)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("IsGreaterE() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if tt.wantErr {
+				if tt.errMsg != "" && err != nil {
+					if !strings.Contains(err.Error(), tt.errMsg) {
+						t.Errorf("IsGreaterE() error = %v, should contain %q", err, tt.errMsg)
+					}
+				}
+				return
+			}
+			if got != tt.want {
+				t.Errorf("IsGreaterE() = %v, want %v", got, tt.want)
 			}
 		})
 	}

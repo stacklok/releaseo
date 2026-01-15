@@ -18,18 +18,49 @@ package github
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/google/go-github/v60/github"
 	"golang.org/x/oauth2"
 )
 
-// Client wraps the GitHub API client.
+// PRCreator defines the interface for creating pull requests.
+type PRCreator interface {
+	// CreateReleasePR creates a new branch with the modified files and opens a PR.
+	CreateReleasePR(ctx context.Context, req PRRequest) (*PRResult, error)
+}
+
+// Client wraps the GitHub API client and implements PRCreator.
 type Client struct {
-	client *github.Client
+	client     *github.Client
+	fileReader FileReader
+}
+
+// Ensure Client implements PRCreator at compile time.
+var _ PRCreator = (*Client)(nil)
+
+// osFileReader is the default FileReader implementation that uses os.ReadFile.
+type osFileReader struct{}
+
+// ReadFile reads the contents of a file using the standard library os.ReadFile.
+func (*osFileReader) ReadFile(path string) ([]byte, error) {
+	return os.ReadFile(path)
+}
+
+// ClientOption is a functional option for configuring the Client.
+type ClientOption func(*Client)
+
+// WithFileReader sets a custom FileReader implementation for the Client.
+// This is useful for testing or when file reading needs to be customized.
+func WithFileReader(fr FileReader) ClientOption {
+	return func(c *Client) {
+		c.fileReader = fr
+	}
 }
 
 // NewClient creates a new GitHub client with the provided token.
-func NewClient(ctx context.Context, token string) (*Client, error) {
+// Optional ClientOption functions can be provided to customize the client behavior.
+func NewClient(ctx context.Context, token string, opts ...ClientOption) (*Client, error) {
 	if token == "" {
 		return nil, fmt.Errorf("token is required")
 	}
@@ -39,9 +70,16 @@ func NewClient(ctx context.Context, token string) (*Client, error) {
 	)
 	tc := oauth2.NewClient(ctx, ts)
 
-	return &Client{
-		client: github.NewClient(tc),
-	}, nil
+	c := &Client{
+		client:     github.NewClient(tc),
+		fileReader: &osFileReader{},
+	}
+
+	for _, opt := range opts {
+		opt(c)
+	}
+
+	return c, nil
 }
 
 // PRRequest contains the parameters for creating a pull request.

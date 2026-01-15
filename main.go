@@ -18,6 +18,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -41,28 +42,79 @@ type Config struct {
 	BaseBranch   string
 }
 
+// Dependencies holds the external dependencies for the release process.
+type Dependencies struct {
+	PRCreator     github.PRCreator
+	VersionReader files.VersionReader
+	VersionWriter files.VersionWriter
+	YAMLUpdater   files.YAMLUpdater
+}
+
+// UpdateResult contains the result of updating all version files.
+type UpdateResult struct {
+	HelmDocsFiles []string
+	Errors        []error
+}
+
+// HasErrors returns true if any errors occurred during the update.
+func (r *UpdateResult) HasErrors() bool {
+	return len(r.Errors) > 0
+}
+
+// CombinedError returns a single error combining all errors, or nil if none.
+func (r *UpdateResult) CombinedError() error {
+	if len(r.Errors) == 0 {
+		return nil
+	}
+	return errors.Join(r.Errors...)
+}
+
+// NewDefaultDependencies creates a Dependencies struct with real implementations.
+func NewDefaultDependencies(ctx context.Context, token string) (*Dependencies, error) {
+	prCreator, err := github.NewClient(ctx, token)
+	if err != nil {
+		return nil, fmt.Errorf("creating GitHub client: %w", err)
+	}
+
+	return &Dependencies{
+		PRCreator:     prCreator,
+		VersionReader: &files.DefaultVersionReader{},
+		VersionWriter: &files.DefaultVersionWriter{},
+		YAMLUpdater:   &files.DefaultYAMLUpdater{},
+	}, nil
+}
+
 func main() {
 	ctx := context.Background()
 	cfg := parseFlags()
 
-	if err := run(ctx, cfg); err != nil {
+	deps, err := NewDefaultDependencies(ctx, cfg.Token)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := run(ctx, cfg, deps); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context, cfg Config) error {
+func run(ctx context.Context, cfg Config, deps *Dependencies) error {
 	// Bump version
-	currentVersion, newVersion, err := bumpVersion(cfg)
+	currentVersion, newVersion, err := bumpVersion(cfg, deps.VersionReader)
 	if err != nil {
 		return err
 	}
 
 	// Update all files
-	helmDocsFiles := updateAllFiles(cfg, currentVersion, newVersion.String())
+	result := updateAllFiles(cfg, currentVersion, newVersion.String(), deps)
+	if result.HasErrors() {
+		return fmt.Errorf("updating files: %w", result.CombinedError())
+	}
 
 	// Create the release PR
-	pr, err := createReleasePR(ctx, cfg, newVersion.String(), helmDocsFiles)
+	pr, err := createReleasePR(ctx, cfg, deps.PRCreator, newVersion.String(), result.HelmDocsFiles)
 	if err != nil {
 		return err
 	}
@@ -77,8 +129,8 @@ func run(ctx context.Context, cfg Config) error {
 
 // bumpVersion reads the current version and bumps it according to the bump type.
 // Returns the current version string and the new version.
-func bumpVersion(cfg Config) (string, *version.Version, error) {
-	currentVersion, err := files.ReadVersion(cfg.VersionFile)
+func bumpVersion(cfg Config, reader files.VersionReader) (string, *version.Version, error) {
+	currentVersion, err := reader.ReadVersion(cfg.VersionFile)
 	if err != nil {
 		return "", nil, fmt.Errorf("reading version: %w", err)
 	}
@@ -95,7 +147,11 @@ func bumpVersion(cfg Config) (string, *version.Version, error) {
 	}
 	fmt.Printf("New version: %s (%s bump)\n", newVersion, cfg.BumpType)
 
-	if !version.IsGreater(newVersion.String(), currentVersion) {
+	isGreater, err := version.IsGreaterE(newVersion.String(), currentVersion)
+	if err != nil {
+		return "", nil, fmt.Errorf("comparing versions: %w", err)
+	}
+	if !isGreater {
 		return "", nil, fmt.Errorf("new version %s is not greater than current %s", newVersion, currentVersion)
 	}
 
@@ -103,49 +159,51 @@ func bumpVersion(cfg Config) (string, *version.Version, error) {
 }
 
 // updateAllFiles updates the VERSION file, custom version files, and runs helm-docs.
-// Returns the list of files modified by helm-docs.
-func updateAllFiles(cfg Config, currentVersion, newVersion string) []string {
+// Returns an UpdateResult containing the list of files modified by helm-docs and any errors.
+func updateAllFiles(cfg Config, currentVersion, newVersion string, deps *Dependencies) *UpdateResult {
+	result := &UpdateResult{}
+
 	// Update VERSION file
-	if err := files.WriteVersion(cfg.VersionFile, newVersion); err != nil {
-		fmt.Printf("Warning: could not write version file: %v\n", err)
+	if err := deps.VersionWriter.WriteVersion(cfg.VersionFile, newVersion); err != nil {
+		result.Errors = append(result.Errors, fmt.Errorf("writing version file %s: %w", cfg.VersionFile, err))
 	} else {
 		fmt.Printf("Updated %s\n", cfg.VersionFile)
 	}
 
 	// Update custom version files
 	for _, vf := range cfg.VersionFiles {
-		if err := files.UpdateYAMLFile(vf, currentVersion, newVersion); err != nil {
-			fmt.Printf("Warning: could not update %s at %s: %v\n", vf.File, vf.Path, err)
+		if err := deps.YAMLUpdater.UpdateYAMLFile(vf, currentVersion, newVersion); err != nil {
+			result.Errors = append(result.Errors, fmt.Errorf("updating %s at %s: %w", vf.File, vf.Path, err))
 		} else {
 			fmt.Printf("Updated %s at path %s\n", vf.File, vf.Path)
 		}
 	}
 
 	// Run helm-docs if args are provided
-	var helmDocsFiles []string
 	if cfg.HelmDocsArgs != "" {
-		var err error
-		helmDocsFiles, err = runHelmDocs(cfg.HelmDocsArgs)
+		helmDocsFiles, err := runHelmDocs(cfg.HelmDocsArgs)
 		if err != nil {
-			fmt.Printf("Warning: could not run helm-docs: %v\n", err)
+			result.Errors = append(result.Errors, fmt.Errorf("running helm-docs: %w", err))
 		} else {
 			fmt.Printf("Ran helm-docs successfully\n")
 			if len(helmDocsFiles) > 0 {
 				fmt.Printf("Files modified by helm-docs: %v\n", helmDocsFiles)
 			}
+			result.HelmDocsFiles = helmDocsFiles
 		}
 	}
 
-	return helmDocsFiles
+	return result
 }
 
 // createReleasePR creates the GitHub release PR with all modified files.
-func createReleasePR(ctx context.Context, cfg Config, newVersion string, helmDocsFiles []string) (*github.PRResult, error) {
-	gh, err := github.NewClient(ctx, cfg.Token)
-	if err != nil {
-		return nil, fmt.Errorf("creating GitHub client: %w", err)
-	}
-
+func createReleasePR(
+	ctx context.Context,
+	cfg Config,
+	prCreator github.PRCreator,
+	newVersion string,
+	helmDocsFiles []string,
+) (*github.PRResult, error) {
 	branchName := fmt.Sprintf("release/v%s", newVersion)
 	prTitle := fmt.Sprintf("Release v%s", newVersion)
 	prBody := generatePRBody(newVersion, cfg.BumpType, cfg.VersionFiles, cfg.HelmDocsArgs != "")
@@ -153,7 +211,7 @@ func createReleasePR(ctx context.Context, cfg Config, newVersion string, helmDoc
 	allFiles := getModifiedFiles(cfg)
 	allFiles = append(allFiles, helmDocsFiles...)
 
-	pr, err := gh.CreateReleasePR(ctx, github.PRRequest{
+	pr, err := prCreator.CreateReleasePR(ctx, github.PRRequest{
 		Owner:      cfg.RepoOwner,
 		Repo:       cfg.RepoName,
 		BaseBranch: cfg.BaseBranch,

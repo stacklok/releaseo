@@ -88,33 +88,73 @@ func UpdateYAMLFile(cfg VersionFileConfig, currentVersion, newVersion string) er
 	return nil
 }
 
+// replacementRule defines a pattern-replacement pair for surgical YAML value replacement.
+// Each rule targets a specific quote style or value format in YAML files.
+type replacementRule struct {
+	// name describes what this rule handles (for debugging/documentation)
+	name string
+	// pattern returns the regex pattern to match for the given old value
+	pattern func(oldValue string) string
+	// replacement returns the replacement string for the given new value
+	replacement func(newValue string) string
+}
+
+// replacementRules defines all the rules for surgical YAML value replacement.
+// Rules are tried in order; the first matching rule is applied.
+var replacementRules = []replacementRule{
+	{
+		// Handles double-quoted values: key: "value"
+		name: "double-quoted",
+		pattern: func(oldValue string) string {
+			return fmt.Sprintf(`"(%s)"`, regexp.QuoteMeta(oldValue))
+		},
+		replacement: func(newValue string) string {
+			return fmt.Sprintf(`"%s"`, newValue)
+		},
+	},
+	{
+		// Handles single-quoted values: key: 'value'
+		name: "single-quoted",
+		pattern: func(oldValue string) string {
+			return fmt.Sprintf(`'(%s)'`, regexp.QuoteMeta(oldValue))
+		},
+		replacement: func(newValue string) string {
+			return fmt.Sprintf(`'%s'`, newValue)
+		},
+	},
+	{
+		// Handles unquoted values at end of line: key: value\n
+		name: "unquoted-eol",
+		pattern: func(oldValue string) string {
+			return fmt.Sprintf(`: (%s)(\s*)$`, regexp.QuoteMeta(oldValue))
+		},
+		replacement: func(newValue string) string {
+			return fmt.Sprintf(`: %s$2`, newValue)
+		},
+	},
+	{
+		// Handles unquoted values followed by inline comment: key: value # comment
+		name: "unquoted-with-comment",
+		pattern: func(oldValue string) string {
+			return fmt.Sprintf(`: (%s)(\s*#)`, regexp.QuoteMeta(oldValue))
+		},
+		replacement: func(newValue string) string {
+			return fmt.Sprintf(`: %s$2`, newValue)
+		},
+	},
+}
+
 // surgicalReplace performs a targeted replacement of a YAML value while preserving
 // the original formatting (quotes, whitespace, etc.)
 func surgicalReplace(data []byte, oldValue, newValue string) ([]byte, error) {
 	content := string(data)
 
-	// Try different quote styles that might wrap the value
-	patterns := []string{
-		// Double quoted: key: "value"
-		fmt.Sprintf(`"(%s)"`, regexp.QuoteMeta(oldValue)),
-		// Single quoted: key: 'value'
-		fmt.Sprintf(`'(%s)'`, regexp.QuoteMeta(oldValue)),
-		// Unquoted after colon: key: value
-		fmt.Sprintf(`: (%s)(\s*)$`, regexp.QuoteMeta(oldValue)),
-		fmt.Sprintf(`: (%s)(\s*#)`, regexp.QuoteMeta(oldValue)),
-	}
-
-	replacements := []string{
-		fmt.Sprintf(`"%s"`, newValue),
-		fmt.Sprintf(`'%s'`, newValue),
-		fmt.Sprintf(`: %s$2`, newValue),
-		fmt.Sprintf(`: %s$2`, newValue),
-	}
-
-	for i, pattern := range patterns {
+	// Try each replacement rule in order; use the first one that matches
+	for _, rule := range replacementRules {
+		pattern := rule.pattern(oldValue)
 		re := regexp.MustCompile(`(?m)` + pattern)
 		if re.MatchString(content) {
-			result := re.ReplaceAllString(content, replacements[i])
+			result := re.ReplaceAllString(content, rule.replacement(newValue))
 			return []byte(result), nil
 		}
 	}
