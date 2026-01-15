@@ -260,9 +260,6 @@ Given the maintainer-only trigger model, the following input-based threats have 
 |---------|-------------|-------------------|----------|
 | Token scope documentation | Document minimum required permissions | T5 | High |
 | Dependency scanning | Enable Dependabot/Renovate | T7 | Medium |
-| SBOM generation | Generate and publish SBOM | T7 | Medium |
-| File size limits | Add explicit limits for processed files | T6 | Low |
-| Signed releases | Sign release artifacts | T7, T8 | Medium |
 
 ## Minimum Token Permissions
 
@@ -286,18 +283,3 @@ permissions:
 - [ ] Review the allowlist of helm-docs flags if using that feature
 - [ ] Pin the action version (e.g., `@v1.0.11`) rather than using `@main`
 - [ ] Enable Dependabot for security updates
-
-## Incident Response
-
-If you discover a security vulnerability in this action:
-
-1. **Do not** open a public issue
-2. Email security@stacklok.com with details
-3. Include steps to reproduce if possible
-4. Allow 90 days for a fix before public disclosure
-
-## Version History
-
-| Version | Date | Changes |
-|---------|------|---------|
-| 1.0 | 2025-01-15 | Initial threat model |
