@@ -300,26 +300,26 @@ func getModifiedFiles(cfg Config) []string {
 // allowedHelmDocsFlags defines the permitted helm-docs flags for security.
 // This prevents arbitrary argument injection.
 var allowedHelmDocsFlags = map[string]bool{
-	"--chart-search-root":     true,
-	"--template-files":        true,
-	"--badge-style":           true,
+	"--chart-search-root":          true,
+	"--template-files":             true,
+	"--badge-style":                true,
 	"--document-dependency-values": true,
-	"--dry-run":               true,
-	"--ignore-file":           true,
-	"--log-level":             true,
-	"--output-file":           true,
-	"--sort-values-order":     true,
-	"--values-file":           true,
-	"-c":                      true,
-	"-d":                      true,
-	"-g":                      true,
-	"-i":                      true,
-	"-l":                      true,
-	"-o":                      true,
-	"-s":                      true,
-	"-t":                      true,
-	"-u":                      true,
-	"-f":                      true,
+	"--dry-run":                    true,
+	"--ignore-file":                true,
+	"--log-level":                  true,
+	"--output-file":                true,
+	"--sort-values-order":          true,
+	"--values-file":                true,
+	"-c":                           true,
+	"-d":                           true,
+	"-g":                           true,
+	"-i":                           true,
+	"-l":                           true,
+	"-o":                           true,
+	"-s":                           true,
+	"-t":                           true,
+	"-u":                           true,
+	"-f":                           true,
 }
 
 // validateHelmDocsArgs validates that all helm-docs arguments are in the allowlist.
@@ -327,18 +327,18 @@ func validateHelmDocsArgs(argsStr string) error {
 	args := strings.Fields(argsStr)
 	for _, arg := range args {
 		// Extract flag name (handle --flag=value format)
-		flag := arg
+		flagName := arg
 		if idx := strings.Index(arg, "="); idx > 0 {
-			flag = arg[:idx]
+			flagName = arg[:idx]
 		}
 
 		// Skip non-flag arguments (values for previous flags)
-		if !strings.HasPrefix(flag, "-") {
+		if !strings.HasPrefix(flagName, "-") {
 			continue
 		}
 
-		if !allowedHelmDocsFlags[flag] {
-			return fmt.Errorf("helm-docs flag %q is not allowed", flag)
+		if !allowedHelmDocsFlags[flagName] {
+			return fmt.Errorf("helm-docs flag %q is not allowed", flagName)
 		}
 	}
 	return nil
