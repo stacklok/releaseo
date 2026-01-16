@@ -7,6 +7,9 @@ branding:
   color: 'blue'
 
 inputs:
+  releaseo_version:
+    description: 'Version of releaseo to use (e.g., v1.0.0). Must match a GitHub release.'
+    required: true
   bump_type:
     description: 'Version bump type (major, minor, patch)'
     required: true
@@ -54,22 +57,23 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    - name: Download releaseo binary
-      id: download
+    - name: Validate version input
       shell: bash
       run: |
-        VERSION="${{ github.action_ref }}"
-
-        # Validate version is specified and is a tag (not a branch)
+        VERSION="${{ inputs.releaseo_version }}"
         if [ -z "$VERSION" ]; then
-          echo "::error::No version specified. Please reference this action with a version tag (e.g., @v1.0.0)"
+          echo "::error::The 'releaseo_version' input is required. Please specify the releaseo version (e.g., v1.0.0)"
+          exit 1
+        fi
+        if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "::error::Invalid version format '$VERSION'. Please use semantic versioning (e.g., v1.0.0)"
           exit 1
         fi
 
-        if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
-          echo "::error::Invalid version '$VERSION'. Please use a semantic version tag (e.g., @v1.0.0). Using @main or @branch-name is not supported."
-          exit 1
-        fi
+    - name: Download releaseo binary
+      shell: bash
+      run: |
+        VERSION="${{ inputs.releaseo_version }}"
 
         # Determine OS and architecture
         OS=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -85,10 +89,9 @@ runs:
         ASSET_URL="https://github.com/stacklok/releaseo/releases/download/${VERSION}/${ASSET_NAME}"
 
         echo "Downloading releaseo ${VERSION} for ${OS}/${ARCH}..."
-        echo "URL: ${ASSET_URL}"
 
         if ! curl -sSL --fail -o releaseo.tar.gz "$ASSET_URL"; then
-          echo "::error::Failed to download releaseo ${VERSION}. Make sure the release exists at: https://github.com/stacklok/releaseo/releases/tag/${VERSION}"
+          echo "::error::Failed to download releaseo ${VERSION}. Ensure the release exists: https://github.com/stacklok/releaseo/releases/tag/${VERSION}"
           exit 1
         fi
 
