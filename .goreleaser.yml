@@ -1,4 +1,5 @@
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# vim: set ts=2 sw=2 tw=0 fo=cnqoj
 version: 2
 
 project_name: releaseo
@@ -21,6 +22,9 @@ builds:
       - arm64
     ldflags:
       - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
 
 archives:
   - id: releaseo
