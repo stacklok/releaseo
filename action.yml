@@ -84,20 +84,21 @@ runs:
           *) echo "::error::Unsupported architecture: $ARCH"; exit 1 ;;
         esac
 
-        # Download the binary
+        # Download the binary to runner temp directory (outside workspace)
         ASSET_NAME="releaseo_${VERSION#v}_${OS}_${ARCH}.tar.gz"
         ASSET_URL="https://github.com/stacklok/releaseo/releases/download/${VERSION}/${ASSET_NAME}"
 
         echo "Downloading releaseo ${VERSION} for ${OS}/${ARCH}..."
 
-        if ! curl -sSL --fail -o releaseo.tar.gz "$ASSET_URL"; then
+        if ! curl -sSL --fail -o "${{ runner.temp }}/releaseo.tar.gz" "$ASSET_URL"; then
           echo "::error::Failed to download releaseo ${VERSION}. Ensure the release exists: https://github.com/stacklok/releaseo/releases/tag/${VERSION}"
           exit 1
         fi
 
-        tar xzf releaseo.tar.gz
-        chmod +x releaseo
-        rm releaseo.tar.gz
+        # Extract only the binary (archive also contains LICENSE and README.md which we don't want)
+        tar xzf "${{ runner.temp }}/releaseo.tar.gz" -C "${{ runner.temp }}" releaseo
+        chmod +x "${{ runner.temp }}/releaseo"
+        rm "${{ runner.temp }}/releaseo.tar.gz"
 
         echo "Successfully downloaded releaseo ${VERSION}"
 
@@ -123,4 +124,4 @@ runs:
           ARGS+=(--version-files="$VERSION_FILES_JSON")
         fi
 
-        ./releaseo "${ARGS[@]}"
+        "${{ runner.temp }}/releaseo" "${ARGS[@]}"
