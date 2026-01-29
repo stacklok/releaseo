@@ -328,6 +328,143 @@ func TestUpdateYAMLFile_PreservesQuotes(t *testing.T) {
 	}
 }
 
+func TestUpdateYAMLFile_VersionMismatch(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		input          string
+		config         VersionFileConfig
+		currentVersion string
+		newVersion     string
+		wantErrContain string
+	}{
+		{
+			name: "image tag version mismatch",
+			input: `operator:
+  image: ghcr.io/stacklok/toolhive/operator:v0.8.1
+`,
+			config:         VersionFileConfig{Path: "operator.image", Prefix: "v"},
+			currentVersion: "0.8.2",
+			newVersion:     "0.8.3",
+			wantErrContain: "version mismatch",
+		},
+		{
+			name: "image tag version mismatch shows found version",
+			input: `toolhiveRunnerImage: ghcr.io/stacklok/toolhive/proxyrunner:v0.7.1
+`,
+			config:         VersionFileConfig{Path: "toolhiveRunnerImage", Prefix: "v"},
+			currentVersion: "0.8.0",
+			newVersion:     "0.8.1",
+			wantErrContain: "v0.7.1",
+		},
+		{
+			name: "image tag version mismatch shows expected version",
+			input: `image: registry.io/app:v1.0.0
+`,
+			config:         VersionFileConfig{Path: "image", Prefix: "v"},
+			currentVersion: "2.0.0",
+			newVersion:     "2.0.1",
+			wantErrContain: "v2.0.0",
+		},
+		{
+			name: "version mismatch without prefix",
+			input: `image: myregistry.io/app:1.0.0
+`,
+			config:         VersionFileConfig{Path: "image"},
+			currentVersion: "2.0.0",
+			newVersion:     "2.0.1",
+			wantErrContain: "version mismatch",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			tmpPath := createTempFile(t, tt.input, "yaml-test-*.yaml")
+
+			cfg := tt.config
+			cfg.File = tmpPath
+
+			err := UpdateYAMLFile(cfg, tt.currentVersion, tt.newVersion)
+			if err == nil {
+				t.Error("UpdateYAMLFile() expected error for version mismatch")
+				return
+			}
+
+			if !strings.Contains(err.Error(), tt.wantErrContain) {
+				t.Errorf("UpdateYAMLFile() error should contain %q, got: %v", tt.wantErrContain, err)
+			}
+		})
+	}
+}
+
+func TestFindEmbeddedVersion(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		value  string
+		prefix string
+		want   string
+	}{
+		{
+			name:   "image tag with v prefix",
+			value:  "ghcr.io/stacklok/toolhive/operator:v0.8.1",
+			prefix: "v",
+			want:   "v0.8.1",
+		},
+		{
+			name:   "image tag without prefix",
+			value:  "myregistry.io/app:1.0.0",
+			prefix: "",
+			want:   "1.0.0",
+		},
+		{
+			name:   "image tag with prerelease",
+			value:  "registry.io/app:v1.0.0-alpha.1",
+			prefix: "v",
+			want:   "v1.0.0-alpha.1",
+		},
+		{
+			name:   "simple version at end",
+			value:  "v1.2.3",
+			prefix: "v",
+			want:   "v1.2.3",
+		},
+		{
+			name:   "no version found",
+			value:  "some-random-string",
+			prefix: "v",
+			want:   "",
+		},
+		{
+			name:   "no version in plain text",
+			value:  "hello world",
+			prefix: "",
+			want:   "",
+		},
+		{
+			name:   "version in URL path (not tag)",
+			value:  "https://example.com/v1/api",
+			prefix: "v",
+			want:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := findEmbeddedVersion(tt.value, tt.prefix)
+			if got != tt.want {
+				t.Errorf("findEmbeddedVersion(%q, %q) = %q, want %q", tt.value, tt.prefix, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestUpdateYAMLFile_PreservesComments(t *testing.T) {
 	t.Parallel()
 

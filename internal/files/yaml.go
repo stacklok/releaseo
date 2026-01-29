@@ -68,6 +68,14 @@ func UpdateYAMLFile(cfg VersionFileConfig, currentVersion, newVersion string) er
 		// Embedded version found - replace just the version portion
 		oldValue = valueAtPath
 		newValue = strings.Replace(valueAtPath, oldVersionStr, newVersionStr, 1)
+	} else if embeddedVersion := findEmbeddedVersion(valueAtPath, cfg.Prefix); embeddedVersion != "" {
+		// Value contains an embedded version, but it doesn't match currentVersion
+		// This indicates a version mismatch that should be fixed before releasing
+		return fmt.Errorf("version mismatch in %s at path %s: "+
+			"expected to find %q but found %q in value %q. "+
+			"This usually means the file was not updated in a previous release. "+
+			"Please manually update the version in this file to %q before running releaseo",
+			cfg.File, cfg.Path, oldVersionStr, embeddedVersion, valueAtPath, oldVersionStr)
 	} else {
 		// No embedded version - replace the entire value (original behavior)
 		oldValue = valueAtPath
@@ -166,6 +174,33 @@ func surgicalReplace(data []byte, oldValue, newValue string) ([]byte, error) {
 	}
 
 	return nil, fmt.Errorf("could not find value %q to replace", oldValue)
+}
+
+// findEmbeddedVersion looks for a version pattern in the value and returns it if found.
+// It detects patterns like ":v1.2.3", ":1.2.3", or prefix followed by semver at end of string.
+// Returns empty string if no embedded version is detected.
+func findEmbeddedVersion(value, prefix string) string {
+	// Pattern to match versions: optional prefix + semver (major.minor.patch with optional prerelease)
+	// Looks for versions after ":" (common in image tags) or at end of string
+	patterns := []string{
+		// Image tag style: repo:v1.2.3 or repo:1.2.3
+		`:` + regexp.QuoteMeta(prefix) + `(\d+\.\d+\.\d+(?:-[a-zA-Z0-9.]+)?)`,
+		// Version at end of string with prefix
+		regexp.QuoteMeta(prefix) + `(\d+\.\d+\.\d+(?:-[a-zA-Z0-9.]+)?)$`,
+	}
+
+	for _, pattern := range patterns {
+		re := regexp.MustCompile(pattern)
+		if matches := re.FindStringSubmatch(value); matches != nil {
+			// Return the full match including prefix (reconstruct it)
+			if strings.HasPrefix(matches[0], ":") {
+				return matches[0][1:] // Remove leading ":"
+			}
+			return matches[0]
+		}
+	}
+
+	return ""
 }
 
 // convertToYAMLPath converts a dot notation path to YAML path format.
