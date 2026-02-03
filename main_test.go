@@ -54,11 +54,13 @@ func (m *mockYAMLUpdater) UpdateYAMLFile(_ files.VersionFileConfig, _, _ string)
 
 // mockPRCreator implements github.PRCreator for testing.
 type mockPRCreator struct {
-	result *github.PRResult
-	err    error
+	result      *github.PRResult
+	err         error
+	lastRequest github.PRRequest // captures the last request for verification
 }
 
-func (m *mockPRCreator) CreateReleasePR(_ context.Context, _ github.PRRequest) (*github.PRResult, error) {
+func (m *mockPRCreator) CreateReleasePR(_ context.Context, req github.PRRequest) (*github.PRResult, error) {
+	m.lastRequest = req
 	return m.result, m.err
 }
 
@@ -383,15 +385,16 @@ func TestCreateReleasePR(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name          string
-		cfg           Config
-		prCreator     *mockPRCreator
-		newVersion    string
-		helmDocsFiles []string
-		wantErr       bool
-		errContains   string
-		wantPRNumber  int
-		wantPRURL     string
+		name            string
+		cfg             Config
+		prCreator       *mockPRCreator
+		newVersion      string
+		helmDocsFiles   []string
+		wantErr         bool
+		errContains     string
+		wantPRNumber    int
+		wantPRURL       string
+		wantTriggeredBy string
 	}{
 		{
 			name: "success",
@@ -454,6 +457,29 @@ func TestCreateReleasePR(t *testing.T) {
 			wantErr:     true,
 			errContains: "creating PR",
 		},
+		{
+			name: "success with triggered by actor",
+			cfg: Config{
+				RepoOwner:   "owner",
+				RepoName:    "repo",
+				BaseBranch:  "main",
+				BumpType:    "minor",
+				VersionFile: "VERSION",
+				TriggeredBy: "testuser",
+			},
+			prCreator: &mockPRCreator{
+				result: &github.PRResult{
+					Number: 789,
+					URL:    "https://github.com/owner/repo/pull/789",
+				},
+				err: nil,
+			},
+			newVersion:      "1.1.0",
+			wantErr:         false,
+			wantPRNumber:    789,
+			wantPRURL:       "https://github.com/owner/repo/pull/789",
+			wantTriggeredBy: "testuser",
+		},
 	}
 
 	for _, tt := range tests {
@@ -483,6 +509,14 @@ func TestCreateReleasePR(t *testing.T) {
 
 			if result.URL != tt.wantPRURL {
 				t.Errorf("createReleasePR() PR URL = %q, want %q", result.URL, tt.wantPRURL)
+			}
+
+			// Verify TriggeredBy is passed through to the PRRequest
+			if tt.wantTriggeredBy != "" {
+				if tt.prCreator.lastRequest.TriggeredBy != tt.wantTriggeredBy {
+					t.Errorf("createReleasePR() TriggeredBy = %q, want %q",
+						tt.prCreator.lastRequest.TriggeredBy, tt.wantTriggeredBy)
+				}
 			}
 		})
 	}

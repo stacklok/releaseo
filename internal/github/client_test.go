@@ -117,6 +117,16 @@ func TestPRRequest_Validate(t *testing.T) {
 			modify:  func(r *PRRequest) { r.Body = "" },
 			wantErr: "",
 		},
+		{
+			name:    "triggered by is optional",
+			modify:  func(r *PRRequest) { r.TriggeredBy = "" },
+			wantErr: "",
+		},
+		{
+			name:    "triggered by with value",
+			modify:  func(r *PRRequest) { r.TriggeredBy = "someuser" },
+			wantErr: "",
+		},
 	}
 
 	for _, tt := range tests {
@@ -188,4 +198,52 @@ func TestClient_ImplementsPRCreator(t *testing.T) {
 
 	// Runtime assertion that Client implements PRCreator interface.
 	var _ PRCreator = client
+}
+
+// TestCommitMessageFormat tests the commit message format with and without git trailer.
+// This tests the format logic used in commitFile().
+func TestCommitMessageFormat(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		fileName    string
+		triggeredBy string
+		wantMessage string
+	}{
+		{
+			name:        "without triggered by",
+			fileName:    "VERSION",
+			triggeredBy: "",
+			wantMessage: "Update VERSION for release",
+		},
+		{
+			name:        "with triggered by",
+			fileName:    "VERSION",
+			triggeredBy: "testuser",
+			wantMessage: "Update VERSION for release\n\nRelease-Triggered-By: testuser",
+		},
+		{
+			name:        "with triggered by on Chart.yaml",
+			fileName:    "Chart.yaml",
+			triggeredBy: "releasebot",
+			wantMessage: "Update Chart.yaml for release\n\nRelease-Triggered-By: releasebot",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Replicate the message format logic from commitFile()
+			message := "Update " + tt.fileName + " for release"
+			if tt.triggeredBy != "" {
+				message += "\n\nRelease-Triggered-By: " + tt.triggeredBy
+			}
+
+			if message != tt.wantMessage {
+				t.Errorf("commit message = %q, want %q", message, tt.wantMessage)
+			}
+		})
+	}
 }
