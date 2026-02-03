@@ -83,15 +83,16 @@ func NewClient(ctx context.Context, token string, opts ...ClientOption) (*Client
 }
 
 // PRRequest contains the parameters for creating a pull request.
-// All fields except Body are required.
+// All fields except Body and TriggeredBy are required.
 type PRRequest struct {
-	Owner      string   // GitHub repository owner (required)
-	Repo       string   // GitHub repository name (required)
-	BaseBranch string   // Base branch for the PR (required, e.g., "main")
-	HeadBranch string   // Feature branch to create (required)
-	Title      string   // PR title (required)
-	Body       string   // PR body/description
-	Files      []string // Files to commit (required, must not be empty)
+	Owner       string   // GitHub repository owner (required)
+	Repo        string   // GitHub repository name (required)
+	BaseBranch  string   // Base branch for the PR (required, e.g., "main")
+	HeadBranch  string   // Feature branch to create (required)
+	Title       string   // PR title (required)
+	Body        string   // PR body/description
+	Files       []string // Files to commit (required, must not be empty)
+	TriggeredBy string   // GitHub actor who triggered the release (optional, added as git trailer)
 }
 
 // Validate checks that all required fields are set.

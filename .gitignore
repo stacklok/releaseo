@@ -36,3 +36,5 @@ releaseo
 
 # GoReleaser
 dist/
+
+.task/checksum/build

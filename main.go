@@ -40,6 +40,7 @@ type Config struct {
 	RepoOwner    string
 	RepoName     string
 	BaseBranch   string
+	TriggeredBy  string
 }
 
 // Dependencies holds the external dependencies for the release process.
@@ -212,13 +213,14 @@ func createReleasePR(
 	allFiles = append(allFiles, helmDocsFiles...)
 
 	pr, err := prCreator.CreateReleasePR(ctx, github.PRRequest{
-		Owner:      cfg.RepoOwner,
-		Repo:       cfg.RepoName,
-		BaseBranch: cfg.BaseBranch,
-		HeadBranch: branchName,
-		Title:      prTitle,
-		Body:       prBody,
-		Files:      allFiles,
+		Owner:       cfg.RepoOwner,
+		Repo:        cfg.RepoName,
+		BaseBranch:  cfg.BaseBranch,
+		HeadBranch:  branchName,
+		Title:       prTitle,
+		Body:        prBody,
+		Files:       allFiles,
+		TriggeredBy: cfg.TriggeredBy,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating PR: %w", err)
@@ -243,6 +245,7 @@ func parseFlags() Config {
 	cfg.VersionFiles = parseVersionFiles(versionFilesJSON)
 	cfg.Token = resolveToken(cfg.Token)
 	cfg.RepoOwner, cfg.RepoName = parseRepository()
+	cfg.TriggeredBy = os.Getenv("GITHUB_ACTOR")
 
 	validateConfig(cfg)
 

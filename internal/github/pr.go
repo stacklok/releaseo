@@ -47,7 +47,7 @@ func (c *Client) CreateReleasePR(ctx context.Context, req PRRequest) (*PRResult,
 
 	// Commit the files to the new branch
 	for _, filePath := range req.Files {
-		if err := c.commitFile(ctx, req.Owner, req.Repo, req.HeadBranch, filePath); err != nil {
+		if err := c.commitFile(ctx, req.Owner, req.Repo, req.HeadBranch, filePath, req.TriggeredBy); err != nil {
 			return nil, fmt.Errorf("committing file %s: %w", filePath, err)
 		}
 	}
@@ -73,7 +73,8 @@ func (c *Client) CreateReleasePR(ctx context.Context, req PRRequest) (*PRResult,
 }
 
 // commitFile commits a single file to a branch.
-func (c *Client) commitFile(ctx context.Context, owner, repo, branch, filePath string) error {
+// If triggeredBy is non-empty, a git trailer is added to the commit message.
+func (c *Client) commitFile(ctx context.Context, owner, repo, branch, filePath, triggeredBy string) error {
 	// Read file content using the fileReader interface
 	content, err := c.fileReader.ReadFile(filePath)
 	if err != nil {
@@ -87,6 +88,9 @@ func (c *Client) commitFile(ctx context.Context, owner, repo, branch, filePath s
 	)
 
 	message := fmt.Sprintf("Update %s for release", filepath.Base(filePath))
+	if triggeredBy != "" {
+		message += fmt.Sprintf("\n\nRelease-Triggered-By: %s", triggeredBy)
+	}
 
 	opts := &github.RepositoryContentFileOptions{
 		Message: github.String(message),
