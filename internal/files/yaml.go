@@ -142,7 +142,7 @@ var replacementRules = []replacementRule{
 		pattern: func(key, oldValue string) string {
 			return fmt.Sprintf(`(%s:\s*)"(%s)"`, regexp.QuoteMeta(key), regexp.QuoteMeta(oldValue))
 		},
-		replacement: func(key, newValue string) string {
+		replacement: func(_, newValue string) string {
 			// Use ${1} syntax to avoid ambiguity when newValue starts with a digit
 			return fmt.Sprintf(`${1}"%s"`, newValue)
 		},
@@ -153,7 +153,7 @@ var replacementRules = []replacementRule{
 		pattern: func(key, oldValue string) string {
 			return fmt.Sprintf(`(%s:\s*)'(%s)'`, regexp.QuoteMeta(key), regexp.QuoteMeta(oldValue))
 		},
-		replacement: func(key, newValue string) string {
+		replacement: func(_, newValue string) string {
 			return fmt.Sprintf(`${1}'%s'`, newValue)
 		},
 	},
@@ -163,7 +163,7 @@ var replacementRules = []replacementRule{
 		pattern: func(key, oldValue string) string {
 			return fmt.Sprintf(`(%s:\s*)(%s)(\s*)$`, regexp.QuoteMeta(key), regexp.QuoteMeta(oldValue))
 		},
-		replacement: func(key, newValue string) string {
+		replacement: func(_, newValue string) string {
 			return fmt.Sprintf(`${1}%s${3}`, newValue)
 		},
 	},
@@ -173,7 +173,7 @@ var replacementRules = []replacementRule{
 		pattern: func(key, oldValue string) string {
 			return fmt.Sprintf(`(%s:\s*)(%s)(\s*#)`, regexp.QuoteMeta(key), regexp.QuoteMeta(oldValue))
 		},
-		replacement: func(key, newValue string) string {
+		replacement: func(_, newValue string) string {
 			return fmt.Sprintf(`${1}%s${3}`, newValue)
 		},
 	},
