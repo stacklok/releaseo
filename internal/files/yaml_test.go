@@ -251,6 +251,34 @@ func TestConvertToYAMLPath(t *testing.T) {
 	}
 }
 
+func TestExtractKeyFromPath(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"version", "version"},
+		{"appVersion", "appVersion"},
+		{"metadata.version", "version"},
+		{"spec.template.spec.image.tag", "tag"},
+		{"operator.image", "image"},
+		{"containers[0].image", "image"},
+		{"spec.containers[0].image", "image"},
+		{"data[0]", "data"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
+			got := extractKeyFromPath(tt.input)
+			if got != tt.want {
+				t.Errorf("extractKeyFromPath(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestUpdateYAMLFile_InvalidPath(t *testing.T) {
 	t.Parallel()
 
@@ -602,6 +630,118 @@ app:
 			for _, want := range tt.wantContains {
 				if !strings.Contains(got, want) {
 					t.Errorf("UpdateYAMLFile() comment not preserved, want %q in:\n%s", want, got)
+				}
+			}
+		})
+	}
+}
+
+// TestUpdateYAMLFile_SameValueDifferentKeys tests that updating one field does not
+// accidentally modify another field with the same value but different formatting.
+// This was a bug where updating "version: 0.9.0" would also modify "appVersion: "0.9.0""
+// because the replacement was not key-aware.
+func TestUpdateYAMLFile_SameValueDifferentKeys(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		input          string
+		config         VersionFileConfig
+		currentVersion string
+		newVersion     string
+		wantContains   []string
+		wantNotContain []string
+	}{
+		{
+			name: "update unquoted version without affecting quoted appVersion",
+			input: `apiVersion: v2
+name: test-chart
+version: 0.9.0
+appVersion: "0.9.0"
+`,
+			config:         VersionFileConfig{Path: "version"},
+			currentVersion: "0.9.0",
+			newVersion:     "0.9.1",
+			wantContains: []string{
+				"version: 0.9.1",
+				`appVersion: "0.9.0"`, // appVersion should NOT be changed
+			},
+			wantNotContain: []string{
+				`appVersion: "0.9.1"`, // should NOT happen
+			},
+		},
+		{
+			name: "update quoted appVersion without affecting unquoted version",
+			input: `apiVersion: v2
+name: test-chart
+version: 0.9.0
+appVersion: "0.9.0"
+`,
+			config:         VersionFileConfig{Path: "appVersion"},
+			currentVersion: "0.9.0",
+			newVersion:     "0.9.1",
+			wantContains: []string{
+				"version: 0.9.0", // version should NOT be changed
+				`appVersion: "0.9.1"`,
+			},
+			wantNotContain: []string{
+				"version: 0.9.1", // should NOT happen
+			},
+		},
+		{
+			name: "sequential updates to different keys with same value",
+			input: `apiVersion: v2
+name: operator-crds
+version: 0.9.0
+appVersion: "0.9.0"
+`,
+			config:         VersionFileConfig{Path: "version"},
+			currentVersion: "0.9.0",
+			newVersion:     "0.9.1",
+			wantContains: []string{
+				"version: 0.9.1",
+				`appVersion: "0.9.0"`,
+			},
+		},
+		{
+			name: "different keys same value - nested paths",
+			input: `chart:
+  version: 0.9.0
+  appVersion: "0.9.0"
+  description: A test chart
+`,
+			config:         VersionFileConfig{Path: "chart.version"},
+			currentVersion: "0.9.0",
+			newVersion:     "0.9.1",
+			wantContains: []string{
+				"version: 0.9.1",
+				`appVersion: "0.9.0"`, // appVersion should NOT be changed
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			tmpPath := createTempFile(t, tt.input, "test*.yaml")
+			cfg := tt.config
+			cfg.File = tmpPath
+
+			err := UpdateYAMLFile(cfg, tt.currentVersion, tt.newVersion)
+			if err != nil {
+				t.Fatalf("UpdateYAMLFile() error = %v", err)
+			}
+
+			got := readTempFile(t, tmpPath)
+			for _, want := range tt.wantContains {
+				if !strings.Contains(got, want) {
+					t.Errorf("UpdateYAMLFile() should contain %q, got:\n%s", want, got)
+				}
+			}
+			for _, notWant := range tt.wantNotContain {
+				if strings.Contains(got, notWant) {
+					t.Errorf("UpdateYAMLFile() should NOT contain %q, got:\n%s", notWant, got)
 				}
 			}
 		})
