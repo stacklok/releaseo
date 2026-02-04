@@ -82,8 +82,11 @@ func UpdateYAMLFile(cfg VersionFileConfig, currentVersion, newVersion string) er
 		newValue = newVersionStr
 	}
 
-	// Perform surgical replacement - find and replace only the value
-	newData, err := surgicalReplace(data, oldValue, newValue)
+	// Extract the key name from the path for targeted replacement
+	key := extractKeyFromPath(cfg.Path)
+
+	// Perform surgical replacement - find and replace only the value for this specific key
+	newData, err := surgicalReplace(data, key, oldValue, newValue)
 	if err != nil {
 		return fmt.Errorf("replacing value at path %s: %w", cfg.Path, err)
 	}
@@ -96,84 +99,111 @@ func UpdateYAMLFile(cfg VersionFileConfig, currentVersion, newVersion string) er
 	return nil
 }
 
+// extractKeyFromPath extracts the final key name from a dot-notation path.
+// Examples:
+//
+//	"version" -> "version"
+//	"metadata.version" -> "version"
+//	"spec.containers[0].image" -> "image"
+//	"operator.image" -> "image"
+func extractKeyFromPath(path string) string {
+	// Remove any array indices from the path
+	re := regexp.MustCompile(`\[\d+\]`)
+	cleanPath := re.ReplaceAllString(path, "")
+
+	// Get the last component after splitting by dots
+	parts := strings.Split(cleanPath, ".")
+	if len(parts) == 0 {
+		return path
+	}
+	return parts[len(parts)-1]
+}
+
 // replacementRule defines a pattern-replacement pair for surgical YAML value replacement.
 // Each rule targets a specific quote style or value format in YAML files.
 type replacementRule struct {
 	// name describes what this rule handles (for debugging/documentation)
 	name string
-	// pattern returns the regex pattern to match for the given old value
-	pattern func(oldValue string) string
-	// replacement returns the replacement string for the given new value
-	replacement func(newValue string) string
+	// pattern returns the regex pattern to match for the given key and old value.
+	// The key is included to ensure we only match the specific YAML key we're updating.
+	pattern func(key, oldValue string) string
+	// replacement returns the replacement string for the given key and new value
+	replacement func(key, newValue string) string
 }
 
 // replacementRules defines all the rules for surgical YAML value replacement.
 // Rules are tried in order; the first matching rule is applied.
+// Each pattern includes the key name to ensure we only replace the value for the
+// specific YAML key being updated, not other keys with the same value.
 var replacementRules = []replacementRule{
 	{
 		// Handles double-quoted values: key: "value"
 		name: "double-quoted",
-		pattern: func(oldValue string) string {
-			return fmt.Sprintf(`"(%s)"`, regexp.QuoteMeta(oldValue))
+		pattern: func(key, oldValue string) string {
+			return fmt.Sprintf(`(%s:\s*)"(%s)"`, regexp.QuoteMeta(key), regexp.QuoteMeta(oldValue))
 		},
-		replacement: func(newValue string) string {
-			return fmt.Sprintf(`"%s"`, newValue)
+		replacement: func(_, newValue string) string {
+			// Use ${1} syntax to avoid ambiguity when newValue starts with a digit
+			return fmt.Sprintf(`${1}"%s"`, newValue)
 		},
 	},
 	{
 		// Handles single-quoted values: key: 'value'
 		name: "single-quoted",
-		pattern: func(oldValue string) string {
-			return fmt.Sprintf(`'(%s)'`, regexp.QuoteMeta(oldValue))
+		pattern: func(key, oldValue string) string {
+			return fmt.Sprintf(`(%s:\s*)'(%s)'`, regexp.QuoteMeta(key), regexp.QuoteMeta(oldValue))
 		},
-		replacement: func(newValue string) string {
-			return fmt.Sprintf(`'%s'`, newValue)
+		replacement: func(_, newValue string) string {
+			return fmt.Sprintf(`${1}'%s'`, newValue)
 		},
 	},
 	{
 		// Handles unquoted values at end of line: key: value\n
 		name: "unquoted-eol",
-		pattern: func(oldValue string) string {
-			return fmt.Sprintf(`: (%s)(\s*)$`, regexp.QuoteMeta(oldValue))
+		pattern: func(key, oldValue string) string {
+			return fmt.Sprintf(`(%s:\s*)(%s)(\s*)$`, regexp.QuoteMeta(key), regexp.QuoteMeta(oldValue))
 		},
-		replacement: func(newValue string) string {
-			return fmt.Sprintf(`: %s$2`, newValue)
+		replacement: func(_, newValue string) string {
+			return fmt.Sprintf(`${1}%s${3}`, newValue)
 		},
 	},
 	{
 		// Handles unquoted values followed by inline comment: key: value # comment
 		name: "unquoted-with-comment",
-		pattern: func(oldValue string) string {
-			return fmt.Sprintf(`: (%s)(\s*#)`, regexp.QuoteMeta(oldValue))
+		pattern: func(key, oldValue string) string {
+			return fmt.Sprintf(`(%s:\s*)(%s)(\s*#)`, regexp.QuoteMeta(key), regexp.QuoteMeta(oldValue))
 		},
-		replacement: func(newValue string) string {
-			return fmt.Sprintf(`: %s$2`, newValue)
+		replacement: func(_, newValue string) string {
+			return fmt.Sprintf(`${1}%s${3}`, newValue)
 		},
 	},
 }
 
 // surgicalReplace performs a targeted replacement of a YAML value while preserving
-// the original formatting (quotes, whitespace, etc.)
-func surgicalReplace(data []byte, oldValue, newValue string) ([]byte, error) {
+// the original formatting (quotes, whitespace, etc.). The key parameter ensures
+// we only replace the value for the specific YAML key being updated.
+func surgicalReplace(data []byte, key, oldValue, newValue string) ([]byte, error) {
 	content := string(data)
 
 	// Try each replacement rule in order; use the first one that matches
 	for _, rule := range replacementRules {
-		pattern := rule.pattern(oldValue)
+		pattern := rule.pattern(key, oldValue)
 		re := regexp.MustCompile(`(?m)` + pattern)
 		if re.MatchString(content) {
-			result := re.ReplaceAllString(content, rule.replacement(newValue))
+			result := re.ReplaceAllString(content, rule.replacement(key, newValue))
 			return []byte(result), nil
 		}
 	}
 
-	// Fallback: simple string replacement if no pattern matched
-	if strings.Contains(content, oldValue) {
-		result := strings.Replace(content, oldValue, newValue, 1)
+	// Fallback: key-aware simple string replacement if no pattern matched
+	// Look for "key: oldValue" or "key:oldValue" patterns
+	keyPattern := regexp.MustCompile(fmt.Sprintf(`(%s:\s*)%s`, regexp.QuoteMeta(key), regexp.QuoteMeta(oldValue)))
+	if keyPattern.MatchString(content) {
+		result := keyPattern.ReplaceAllString(content, fmt.Sprintf(`${1}%s`, newValue))
 		return []byte(result), nil
 	}
 
-	return nil, fmt.Errorf("could not find value %q to replace", oldValue)
+	return nil, fmt.Errorf("could not find value %q for key %q to replace", oldValue, key)
 }
 
 // findEmbeddedVersion looks for a version pattern in the value and returns it if found.
