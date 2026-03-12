@@ -225,6 +225,11 @@ func TestDeduplicateFiles(t *testing.T) {
 			want:  []string{"deploy/charts/operator/Chart.yaml", "deploy/charts/operator/values.yaml"},
 		},
 		{
+			name:  "multiple files with duplicate names but separate paths preserves order",
+			input: []string{"deploy/charts/operator/Chart.yaml", "deploy/charts/operator/values.yaml", "deploy/charts/operator-crds/Chart.yaml", "deploy/charts/operator-crds/values.yaml"},
+			want:  []string{"deploy/charts/operator/Chart.yaml", "deploy/charts/operator/values.yaml", "deploy/charts/operator-crds/Chart.yaml", "deploy/charts/operator-crds/values.yaml"},
+		},
+		{
 			name:  "single file",
 			input: []string{"VERSION"},
 			want:  []string{"VERSION"},
@@ -259,33 +264,29 @@ func TestDeduplicateFiles(t *testing.T) {
 }
 
 // TestCommitMessageFormat tests the commit message format with and without git trailer.
-// This tests the format logic used in commitFile().
+// This tests the format logic used in commitFiles().
 func TestCommitMessageFormat(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name        string
-		fileName    string
 		triggeredBy string
 		wantMessage string
 	}{
 		{
 			name:        "without triggered by",
-			fileName:    "VERSION",
 			triggeredBy: "",
-			wantMessage: "Update VERSION for release",
+			wantMessage: "Update release files",
 		},
 		{
 			name:        "with triggered by",
-			fileName:    "VERSION",
 			triggeredBy: "testuser",
-			wantMessage: "Update VERSION for release\n\nRelease-Triggered-By: testuser",
+			wantMessage: "Update release files\n\nRelease-Triggered-By: testuser",
 		},
 		{
-			name:        "with triggered by on Chart.yaml",
-			fileName:    "Chart.yaml",
+			name:        "with triggered by from releasebot",
 			triggeredBy: "releasebot",
-			wantMessage: "Update Chart.yaml for release\n\nRelease-Triggered-By: releasebot",
+			wantMessage: "Update release files\n\nRelease-Triggered-By: releasebot",
 		},
 	}
 
@@ -293,8 +294,8 @@ func TestCommitMessageFormat(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			// Replicate the message format logic from commitFile()
-			message := "Update " + tt.fileName + " for release"
+			// Replicate the message format logic from commitFiles()
+			message := "Update release files"
 			if tt.triggeredBy != "" {
 				message += "\n\nRelease-Triggered-By: " + tt.triggeredBy
 			}
