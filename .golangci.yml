@@ -43,6 +43,7 @@ linters:
       excludes:
         - G302  # OpenFile permissions - 0644 is appropriate for GITHUB_OUTPUT
         - G304  # File path from variable is expected for CLI tools
+        - G703  # Path traversal via taint - file paths from config are expected for CLI tools
         - G306  # WriteFile permissions - 0644 is appropriate for VERSION files
         - G601
         - G602  # Slice bounds checked by prior logic

@@ -17,7 +17,6 @@ package github
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 
 	"github.com/google/go-github/v60/github"
 )
@@ -45,11 +44,14 @@ func (c *Client) CreateReleasePR(ctx context.Context, req PRRequest) (*PRResult,
 		return nil, fmt.Errorf("creating branch: %w", err)
 	}
 
-	// Commit the files to the new branch
-	for _, filePath := range req.Files {
-		if err := c.commitFile(ctx, req.Owner, req.Repo, req.HeadBranch, filePath, req.TriggeredBy); err != nil {
-			return nil, fmt.Errorf("committing file %s: %w", filePath, err)
-		}
+	// Deduplicate files - each file already has all YAML path changes applied
+	// on disk, so committing the same file twice causes 409 conflicts due to
+	// GitHub API eventual consistency with sequential SHA updates.
+	uniqueFiles := deduplicateFiles(req.Files)
+
+	// Commit all files to the new branch in a single atomic commit
+	if err := c.commitFiles(ctx, req.Owner, req.Repo, req.HeadBranch, uniqueFiles, req.TriggeredBy); err != nil {
+		return nil, fmt.Errorf("committing files: %w", err)
 	}
 
 	// Create the pull request
@@ -72,43 +74,81 @@ func (c *Client) CreateReleasePR(ctx context.Context, req PRRequest) (*PRResult,
 	}, nil
 }
 
-// commitFile commits a single file to a branch.
+// deduplicateFiles returns a new slice with duplicate file paths removed,
+// preserving the order of first occurrence.
+func deduplicateFiles(files []string) []string {
+	seen := make(map[string]bool, len(files))
+	unique := make([]string, 0, len(files))
+	for _, f := range files {
+		if !seen[f] {
+			seen[f] = true
+			unique = append(unique, f)
+		}
+	}
+	return unique
+}
+
+// commitFiles commits all files to a branch in a single atomic commit using the Git Data API.
 // If triggeredBy is non-empty, a git trailer is added to the commit message.
-func (c *Client) commitFile(ctx context.Context, owner, repo, branch, filePath, triggeredBy string) error {
-	// Read file content using the fileReader interface
-	content, err := c.fileReader.ReadFile(filePath)
+func (c *Client) commitFiles(ctx context.Context, owner, repo, branch string, files []string, triggeredBy string) error {
+	// Get the current branch reference
+	ref, _, err := c.client.Git.GetRef(ctx, owner, repo, "refs/heads/"+branch)
 	if err != nil {
-		return fmt.Errorf("reading file: %w", err)
+		return fmt.Errorf("getting branch ref: %w", err)
 	}
 
-	// Get current file (to get SHA for update)
-	existingFile, _, _, err := c.client.Repositories.GetContents(
-		ctx, owner, repo, filePath,
-		&github.RepositoryContentGetOptions{Ref: branch},
-	)
+	// Get the commit to find the base tree
+	baseCommit, _, err := c.client.Git.GetCommit(ctx, owner, repo, ref.GetObject().GetSHA())
+	if err != nil {
+		return fmt.Errorf("getting base commit: %w", err)
+	}
 
-	message := fmt.Sprintf("Update %s for release", filepath.Base(filePath))
+	// Build tree entries for all files
+	entries := make([]*github.TreeEntry, 0, len(files))
+	for _, filePath := range files {
+		content, err := c.fileReader.ReadFile(filePath)
+		if err != nil {
+			return fmt.Errorf("reading file %s: %w", filePath, err)
+		}
+		contentStr := string(content)
+		entries = append(entries, &github.TreeEntry{
+			Path:    github.String(filePath),
+			Mode:    github.String("100644"),
+			Type:    github.String("blob"),
+			Content: github.String(contentStr),
+		})
+	}
+
+	// Create a new tree with all file changes
+	tree, _, err := c.client.Git.CreateTree(ctx, owner, repo, baseCommit.GetTree().GetSHA(), entries)
+	if err != nil {
+		return fmt.Errorf("creating tree: %w", err)
+	}
+
+	// Build commit message
+	message := "Update release files"
 	if triggeredBy != "" {
 		message += fmt.Sprintf("\n\nRelease-Triggered-By: %s", triggeredBy)
 	}
 
-	opts := &github.RepositoryContentFileOptions{
-		Message: github.String(message),
-		Content: content,
-		Branch:  github.String(branch),
-	}
-
-	if err == nil && existingFile != nil {
-		// File exists - update it
-		opts.SHA = existingFile.SHA
-		_, _, err = c.client.Repositories.UpdateFile(ctx, owner, repo, filePath, opts)
-	} else {
-		// File doesn't exist - create it
-		_, _, err = c.client.Repositories.CreateFile(ctx, owner, repo, filePath, opts)
-	}
-
+	// Create the commit
+	commit, _, err := c.client.Git.CreateCommit(ctx, owner, repo,
+		&github.Commit{
+			Message: github.String(message),
+			Tree:    tree,
+			Parents: []*github.Commit{baseCommit},
+		},
+		nil,
+	)
 	if err != nil {
-		return fmt.Errorf("updating file: %w", err)
+		return fmt.Errorf("creating commit: %w", err)
+	}
+
+	// Update the branch reference to point to the new commit
+	ref.Object.SHA = commit.SHA
+	_, _, err = c.client.Git.UpdateRef(ctx, owner, repo, ref, false)
+	if err != nil {
+		return fmt.Errorf("updating ref: %w", err)
 	}
 
 	return nil

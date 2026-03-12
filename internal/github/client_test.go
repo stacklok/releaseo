@@ -200,34 +200,49 @@ func TestClient_ImplementsPRCreator(t *testing.T) {
 	var _ PRCreator = client
 }
 
-// TestCommitMessageFormat tests the commit message format with and without git trailer.
-// This tests the format logic used in commitFile().
-func TestCommitMessageFormat(t *testing.T) {
+// TestDeduplicateFiles tests that duplicate file paths are removed while preserving order.
+func TestDeduplicateFiles(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		fileName    string
-		triggeredBy string
-		wantMessage string
+		name  string
+		input []string
+		want  []string
 	}{
 		{
-			name:        "without triggered by",
-			fileName:    "VERSION",
-			triggeredBy: "",
-			wantMessage: "Update VERSION for release",
+			name:  "no duplicates",
+			input: []string{"a.yaml", "b.yaml", "c.yaml"},
+			want:  []string{"a.yaml", "b.yaml", "c.yaml"},
 		},
 		{
-			name:        "with triggered by",
-			fileName:    "VERSION",
-			triggeredBy: "testuser",
-			wantMessage: "Update VERSION for release\n\nRelease-Triggered-By: testuser",
+			name:  "single file duplicated",
+			input: []string{"deploy/charts/operator-crds/Chart.yaml", "deploy/charts/operator-crds/Chart.yaml"},
+			want:  []string{"deploy/charts/operator-crds/Chart.yaml"},
 		},
 		{
-			name:        "with triggered by on Chart.yaml",
-			fileName:    "Chart.yaml",
-			triggeredBy: "releasebot",
-			wantMessage: "Update Chart.yaml for release\n\nRelease-Triggered-By: releasebot",
+			name:  "multiple files with duplicates preserves order",
+			input: []string{"deploy/charts/operator/Chart.yaml", "deploy/charts/operator/values.yaml", "deploy/charts/operator/Chart.yaml", "deploy/charts/operator/values.yaml", "deploy/charts/operator/values.yaml"},
+			want:  []string{"deploy/charts/operator/Chart.yaml", "deploy/charts/operator/values.yaml"},
+		},
+		{
+			name:  "multiple files with duplicate names but separate paths preserves order",
+			input: []string{"deploy/charts/operator/Chart.yaml", "deploy/charts/operator/values.yaml", "deploy/charts/operator-crds/Chart.yaml", "deploy/charts/operator-crds/values.yaml"},
+			want:  []string{"deploy/charts/operator/Chart.yaml", "deploy/charts/operator/values.yaml", "deploy/charts/operator-crds/Chart.yaml", "deploy/charts/operator-crds/values.yaml"},
+		},
+		{
+			name:  "single file",
+			input: []string{"VERSION"},
+			want:  []string{"VERSION"},
+		},
+		{
+			name:  "empty slice",
+			input: []string{},
+			want:  []string{},
+		},
+		{
+			name:  "nil slice",
+			input: nil,
+			want:  []string{},
 		},
 	}
 
@@ -235,8 +250,52 @@ func TestCommitMessageFormat(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			// Replicate the message format logic from commitFile()
-			message := "Update " + tt.fileName + " for release"
+			got := deduplicateFiles(tt.input)
+			if len(got) != len(tt.want) {
+				t.Fatalf("deduplicateFiles() returned %d items, want %d\ngot:  %v\nwant: %v", len(got), len(tt.want), got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("deduplicateFiles()[%d] = %q, want %q", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+// TestCommitMessageFormat tests the commit message format with and without git trailer.
+// This tests the format logic used in commitFiles().
+func TestCommitMessageFormat(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		triggeredBy string
+		wantMessage string
+	}{
+		{
+			name:        "without triggered by",
+			triggeredBy: "",
+			wantMessage: "Update release files",
+		},
+		{
+			name:        "with triggered by",
+			triggeredBy: "testuser",
+			wantMessage: "Update release files\n\nRelease-Triggered-By: testuser",
+		},
+		{
+			name:        "with triggered by from releasebot",
+			triggeredBy: "releasebot",
+			wantMessage: "Update release files\n\nRelease-Triggered-By: releasebot",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Replicate the message format logic from commitFiles()
+			message := "Update release files"
 			if tt.triggeredBy != "" {
 				message += "\n\nRelease-Triggered-By: " + tt.triggeredBy
 			}
