@@ -311,14 +311,14 @@ func validateConfig(cfg Config) {
 func generatePRBody(ver, bumpType string, versionFiles []files.VersionFileConfig, ranHelmDocs bool) string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("## Release v%s\n\n", ver))
+	fmt.Fprintf(&sb, "## Release v%s\n\n", ver)
 	sb.WriteString("### Version Bump\n\n")
-	sb.WriteString(fmt.Sprintf("**%s** release\n\n", bumpType))
+	fmt.Fprintf(&sb, "**%s** release\n\n", bumpType)
 	sb.WriteString("### Files Updated\n\n")
 	sb.WriteString("- `VERSION`\n")
 
 	for _, vf := range versionFiles {
-		sb.WriteString(fmt.Sprintf("- `%s` (path: `%s`)\n", vf.File, vf.Path))
+		fmt.Fprintf(&sb, "- `%s` (path: `%s`)\n", vf.File, vf.Path)
 	}
 
 	if ranHelmDocs {
