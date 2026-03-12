@@ -45,8 +45,13 @@ func (c *Client) CreateReleasePR(ctx context.Context, req PRRequest) (*PRResult,
 		return nil, fmt.Errorf("creating branch: %w", err)
 	}
 
+	// Deduplicate files - each file already has all YAML path changes applied
+	// on disk, so committing the same file twice causes 409 conflicts due to
+	// GitHub API eventual consistency with sequential SHA updates.
+	uniqueFiles := deduplicateFiles(req.Files)
+
 	// Commit the files to the new branch
-	for _, filePath := range req.Files {
+	for _, filePath := range uniqueFiles {
 		if err := c.commitFile(ctx, req.Owner, req.Repo, req.HeadBranch, filePath, req.TriggeredBy); err != nil {
 			return nil, fmt.Errorf("committing file %s: %w", filePath, err)
 		}
@@ -70,6 +75,20 @@ func (c *Client) CreateReleasePR(ctx context.Context, req PRRequest) (*PRResult,
 		Number: pr.GetNumber(),
 		URL:    pr.GetHTMLURL(),
 	}, nil
+}
+
+// deduplicateFiles returns a new slice with duplicate file paths removed,
+// preserving the order of first occurrence.
+func deduplicateFiles(files []string) []string {
+	seen := make(map[string]bool, len(files))
+	unique := make([]string, 0, len(files))
+	for _, f := range files {
+		if !seen[f] {
+			seen[f] = true
+			unique = append(unique, f)
+		}
+	}
+	return unique
 }
 
 // commitFile commits a single file to a branch.
