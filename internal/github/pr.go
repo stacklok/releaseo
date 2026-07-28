@@ -18,7 +18,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/google/go-github/v60/github"
+	"github.com/google/go-github/v89/github"
 )
 
 // CreateReleasePR creates a new branch with the modified files and opens a PR.
@@ -34,9 +34,9 @@ func (c *Client) CreateReleasePR(ctx context.Context, req PRRequest) (*PRResult,
 	}
 
 	// Create the new branch
-	newRef := &github.Reference{
-		Ref:    github.String("refs/heads/" + req.HeadBranch),
-		Object: &github.GitObject{SHA: baseRef.Object.SHA},
+	newRef := github.CreateRef{
+		Ref: "refs/heads/" + req.HeadBranch,
+		SHA: baseRef.GetObject().GetSHA(),
 	}
 
 	_, _, err = c.client.Git.CreateRef(ctx, req.Owner, req.Repo, newRef)
@@ -133,7 +133,7 @@ func (c *Client) commitFiles(ctx context.Context, owner, repo, branch string, fi
 
 	// Create the commit
 	commit, _, err := c.client.Git.CreateCommit(ctx, owner, repo,
-		&github.Commit{
+		github.Commit{
 			Message: github.String(message),
 			Tree:    tree,
 			Parents: []*github.Commit{baseCommit},
@@ -145,8 +145,9 @@ func (c *Client) commitFiles(ctx context.Context, owner, repo, branch string, fi
 	}
 
 	// Update the branch reference to point to the new commit
-	ref.Object.SHA = commit.SHA
-	_, _, err = c.client.Git.UpdateRef(ctx, owner, repo, ref, false)
+	_, _, err = c.client.Git.UpdateRef(ctx, owner, repo, ref.GetRef(), github.UpdateRef{
+		SHA: commit.GetSHA(),
+	})
 	if err != nil {
 		return fmt.Errorf("updating ref: %w", err)
 	}
