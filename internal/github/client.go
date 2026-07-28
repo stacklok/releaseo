@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/google/go-github/v60/github"
+	"github.com/google/go-github/v89/github"
 	"golang.org/x/oauth2"
 )
 
@@ -69,9 +69,13 @@ func NewClient(ctx context.Context, token string, opts ...ClientOption) (*Client
 		&oauth2.Token{AccessToken: token},
 	)
 	tc := oauth2.NewClient(ctx, ts)
+	ghClient, err := github.NewClient(github.WithHTTPClient(tc))
+	if err != nil {
+		return nil, fmt.Errorf("creating github client: %w", err)
+	}
 
 	c := &Client{
-		client:     github.NewClient(tc),
+		client:     ghClient,
 		fileReader: &osFileReader{},
 	}
 
