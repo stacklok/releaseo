@@ -18,7 +18,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/google/go-github/v89/github"
+	"github.com/google/go-github/v93/github"
 )
 
 // CreateReleasePR creates a new branch with the modified files and opens a PR.
@@ -55,10 +55,10 @@ func (c *Client) CreateReleasePR(ctx context.Context, req PRRequest) (*PRResult,
 	}
 
 	// Create the pull request
-	pr, _, err := c.client.PullRequests.Create(ctx, req.Owner, req.Repo, &github.NewPullRequest{
+	pr, _, err := c.client.PullRequests.Create(ctx, req.Owner, req.Repo, github.CreatePullRequest{
 		Title: github.String(req.Title),
-		Head:  github.String(req.HeadBranch),
-		Base:  github.String(req.BaseBranch),
+		Head:  req.HeadBranch,
+		Base:  req.BaseBranch,
 		Body:  github.String(req.Body),
 	})
 	if err != nil {
